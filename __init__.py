@@ -1,8 +1,5 @@
 from server import PromptServer
 
-from .resources import resource_stats
-
-
 class SBDSStudio:
     """Canvas entry point for the studio's frontend."""
 
@@ -40,8 +37,6 @@ class SBDSReleaseAfterTake:
         queue.set_flag("free_memory", True)
         return ()
 
-
-PromptServer.instance.routes.get("/sbds/resources")(resource_stats)
 
 NODE_CLASS_MAPPINGS = {
     "SBDSStudio": SBDSStudio,
