@@ -163,13 +163,11 @@ function createStudio() {
                             </label>
                         </div>
                     </fieldset>
-                    <div class="sbds-fields">
-                        <label>Duration (s)<input name="seconds" type="number" min="0.5" max="30" step="0.1" value="5" required></label>
-                        <label>Generation FPS<input name="fps" type="number" min="1" max="60" step="1" value="24" required></label>
-                    </div>
-                    <details>
+                    <details data-generation-settings>
                         <summary>Generation settings</summary>
                         <div class="sbds-fields" data-generation-fields>
+                            <label>Duration (s)<input name="seconds" type="number" min="0.5" max="30" step="0.1" value="5" required></label>
+                            <label>Generation FPS<input name="fps" type="number" min="1" max="60" step="1" value="24" required></label>
                             <label>Seed mode<select name="seedMode"><option value="random">Random</option><option value="fixed">Fixed</option></select></label>
                             <label>Seed<input name="seed" type="number" min="0" max="4294967295" step="1" value="52" disabled required></label>
                             <label>Steps<input name="steps" type="number" min="1" max="100" step="1" value="8" required></label>
@@ -218,6 +216,8 @@ function createStudio() {
     document.body.append(dialog);
 
     const form = dialog.querySelector("form");
+    const generationSettings = form.querySelector("[data-generation-settings]");
+    generationSettings.addEventListener("invalid", () => { generationSettings.open = true; }, true);
     const generate = form.querySelector('button[type="submit"]');
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
