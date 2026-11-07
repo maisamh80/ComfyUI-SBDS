@@ -100,27 +100,27 @@ function createStudio() {
                                 <span>Set age <output data-age for="sbds-age">30 years</output></span>
                                 <input id="sbds-age" name="age" type="range" min="3" max="100" value="30">
                             </label>
-                            <div>
-                                <label>Language
-                                    <select name="language">
-                                        <option value="">Auto</option>
-                                        <option selected>English</option>
-                                        <option>French</option>
-                                        <option>German</option>
-                                        <option>Russian</option>
-                                        <option>Spanish</option>
-                                        <option value="custom">Custom…</option>
-                                    </select>
-                                </label>
-                                <label data-custom-language hidden>Custom language
-                                    <input name="customLanguage" maxlength="60" placeholder="e.g. Persian" disabled required>
-                                </label>
-                            </div>
+                            <label>Language
+                                <select name="language">
+                                    <option value="">Auto</option>
+                                    <option selected>English</option>
+                                    <option>French</option>
+                                    <option>German</option>
+                                    <option>Russian</option>
+                                    <option>Spanish</option>
+                                    <option value="custom">Custom…</option>
+                                </select>
+                            </label>
+                            <label data-custom-language hidden>Custom language
+                                <input name="customLanguage" maxlength="60" placeholder="e.g. Persian" disabled required>
+                            </label>
                             <label>Pitch
                                 <select name="pitch">
+                                    <option value="very low">Very Low</option>
                                     <option value="low">Low</option>
-                                    <option value="mid-range" selected>Medium</option>
+                                    <option value="mid-range" selected>Moderate</option>
                                     <option value="high">High</option>
+                                    <option value="very high">Very High</option>
                                 </select>
                             </label>
                             <label>Speaking pace
