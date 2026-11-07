@@ -8,6 +8,16 @@ const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
     sampler: "Sampler", scheduler: "Scheduler",
 };
+const audioPromptGuidance = {
+    music: {
+        lead: "Generate a music cue.",
+        guidance: "Keep the requested performance clear and in focus. Preserve the described setting, ambience, and acoustics. Omit spoken dialogue, unrelated sound effects, and extra reverb unless the description calls for them.",
+    },
+    sfx: {
+        lead: "Generate a sound effect.",
+        guidance: "Keep the requested sound clean and distinct. Preserve the described setting, sound layers, and acoustics. Omit dialogue, background music, unrelated sounds, and extra reverb unless the description calls for them.",
+    },
+};
 let studio;
 
 const stylesheet = document.createElement("link");
@@ -213,7 +223,7 @@ function createStudio() {
     const promptText = promptEditor.querySelector("textarea");
     const selects = {};
     let promptOverride = readSaved(promptKey);
-    let editorBase;
+    let editorDraft;
     let promptId;
     let busy = false;
     let ready = false;
@@ -330,24 +340,25 @@ function createStudio() {
         form.elements.seed.disabled = form.elements.seedMode.value === "random";
     };
 
-    function generatedPrompt(data) {
+    function buildPromptDraft(data) {
         const text = String(data.get("text")).trim();
-        if (!text) return "";
-        switch (data.get("audioType")) {
-            case "voice": return describeSound(text, Object.fromEntries(data));
-            case "music": return `Generate a music cue. ${text}`;
-            case "sfx": return `Generate a sound effect. ${text}`;
-            default: return text;
+        const type = data.get("audioType");
+        const mode = audioPromptGuidance[type];
+        if (text && mode) {
+            const base = `${mode.lead} ${text}`;
+            return { base, generated: `${base}\n\n${mode.guidance}` };
         }
+        const base = type === "voice" ? describeSound(text, Object.fromEntries(data)) : text;
+        return { base, generated: base };
     }
 
-    function finalPrompt(base) {
-        return promptOverride?.base === base ? promptOverride.text : base;
+    function finalPrompt({ base, generated }) {
+        return promptOverride?.base === base ? promptOverride.text : generated;
     }
 
     function openPromptEditor() {
-        editorBase = generatedPrompt(new FormData(form));
-        promptText.value = finalPrompt(editorBase);
+        editorDraft = buildPromptDraft(new FormData(form));
+        promptText.value = finalPrompt(editorDraft);
         promptText.setCustomValidity("");
         promptEditor.showModal();
         promptText.focus();
@@ -362,7 +373,7 @@ function createStudio() {
         openPromptEditor();
     });
     promptEditor.querySelector('[data-action="reset-prompt"]').onclick = () => {
-        promptText.value = editorBase;
+        promptText.value = editorDraft.generated;
         promptText.setCustomValidity("");
         promptText.focus();
     };
@@ -371,12 +382,13 @@ function createStudio() {
     promptEditor.querySelector("form").onsubmit = (event) => {
         event.preventDefault();
         const edited = promptText.value.trim();
-        if (!edited && editorBase) {
+        const { base, generated } = editorDraft;
+        if (!edited && generated) {
             promptText.setCustomValidity("Enter a prompt or reset to the generated text.");
             promptText.reportValidity();
             return;
         }
-        promptOverride = edited === editorBase ? null : { base: editorBase, text: edited };
+        promptOverride = edited === generated ? null : { base, text: edited };
         try {
             localStorage.setItem(promptKey, JSON.stringify(promptOverride));
         } catch {
@@ -414,7 +426,7 @@ function createStudio() {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
                 text: String(data.get("text")), negative: String(data.get("negative")),
-                finalPrompt: finalPrompt(generatedPrompt(data)),
+                finalPrompt: finalPrompt(buildPromptDraft(data)),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
             });
