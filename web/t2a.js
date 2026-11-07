@@ -1,0 +1,43 @@
+export const outputNode = "15";
+
+export const modelInputs = {
+    model: ["UNETLoader", "unet_name", /ltx.*distill/i],
+    encoder: ["CLIPLoader", "clip_name", /gemma.*ltx/i],
+    vae: ["VAELoader", "vae_name", /ltx.*audio.*vae/i],
+    sampler: ["KSamplerSelect", "sampler_name", /^uni_pc$/],
+    scheduler: ["BasicScheduler", "scheduler", /^simple$/],
+};
+
+export function buildAudioGraph(options) {
+    const { text, negative, model, encoder, vae, sampler, scheduler, steps, fps, seconds, seed, cfg } = options;
+    if (!text.trim()) throw new Error("Describe the sound you want to generate.");
+    if (![model, encoder, vae, sampler, scheduler].every(Boolean)) {
+        throw new Error("Choose the model, text encoder, audio VAE, sampler and scheduler in Settings.");
+    }
+    const frames = 1 + 8 * Math.floor(seconds * fps / 8);
+    if (!Number.isFinite(frames) || frames < 9 || frames > 1000) {
+        throw new Error("Choose a duration and FPS that produce 9–1000 frames.");
+    }
+    const link = (id, index = 0) => [String(id), index];
+    const node = (class_type, inputs) => ({ class_type, inputs });
+    return {
+        "1": node("UNETLoader", { unet_name: model, weight_dtype: "default" }),
+        "2": node("LTXVAudioOnlyModel", { model: link(1) }),
+        "3": node("CLIPLoader", { clip_name: encoder, type: "ltxv", device: "default" }),
+        "4": node("VAELoader", { vae_name: vae }),
+        "5": node("CLIPTextEncode", { text: text.trim(), clip: link(3) }),
+        "6": node("CLIPTextEncode", { text: negative, clip: link(3) }),
+        "7": node("LTXVConditioning", { positive: link(5), negative: link(6), frame_rate: fps }),
+        "8": node("LTXVEmptyLatentAudio", { audio_vae: link(4), frames_number: frames, frame_rate: fps, batch_size: 1 }),
+        "9": node("LTXVAudioOnlyEmptyVideoLatent", {}),
+        "10": node("LTXVConcatAVLatent", { video_latent: link(9), audio_latent: link(8) }),
+        "11": node("CFGGuider", { model: link(2), positive: link(7), negative: link(7, 1), cfg }),
+        "12": node("RandomNoise", { noise_seed: seed }),
+        "13": node("KSamplerSelect", { sampler_name: sampler }),
+        "14": node("BasicScheduler", { model: link(2), scheduler, steps, denoise: 1 }),
+        "16": node("SamplerCustomAdvanced", { noise: link(12), guider: link(11), sampler: link(13), sigmas: link(14), latent_image: link(10) }),
+        "17": node("LTXVSeparateAVLatent", { av_latent: link(16) }),
+        "18": node("LTXVAudioVAEDecode", { samples: link(17, 1), audio_vae: link(4) }),
+        [outputNode]: node("SaveAudio", { audio: link(18), filename_prefix: "audio/SBDS/take" }),
+    };
+}
