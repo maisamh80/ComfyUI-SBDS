@@ -1,8 +1,9 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { buildAudioGraph, modelInputs, outputNode } from "./t2a.js";
+import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
 
 const settingsKey = "sbds-model-setup";
+const promptKey = "sbds-final-prompt";
 const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
     sampler: "Sampler", scheduler: "Scheduler",
@@ -26,11 +27,11 @@ async function request(path, options) {
     return data;
 }
 
-function savedSettings() {
+function readSaved(key) {
     try {
-        return JSON.parse(localStorage.getItem(settingsKey)) ?? {};
+        return JSON.parse(localStorage.getItem(key));
     } catch {
-        return {};
+        return null;
     }
 }
 
@@ -52,12 +53,18 @@ function createStudio() {
                 <h1>Make a sound.</h1>
                 <p>Describe a character voice, musical cue, or sound effect for LTX.</p>
                 <form>
+                    <label class="sbds-audio-type">Audio type
+                        <select name="audioType">
+                            <option value="voice">Voice</option>
+                            <option value="general">General audio (music, SFX)</option>
+                        </select>
+                    </label>
                     <label class="sbds-text">Sound description
-                        <textarea name="text" rows="4" required placeholder="Describe a sound or enter a line of dialogue in quotes…"></textarea>
+                        <textarea name="text" rows="4" placeholder="Describe a sound or enter a line of dialogue in quotes…"></textarea>
                     </label>
                     <fieldset class="sbds-voice">
                         <legend>Voice design</legend>
-                        <p>Optional voice details for a character or a line of dialogue.</p>
+                        <p>Shape the character voice or the delivery of a line.</p>
                         <div class="sbds-fields">
                             <label>Voice type
                                 <select name="voiceType">
@@ -65,6 +72,8 @@ function createStudio() {
                                     <option value="female">Female</option>
                                     <option value="male">Male</option>
                                     <option value="androgynous">Androgynous</option>
+                                    <option value="cartoon-style female">Cartoon Female</option>
+                                    <option value="cartoon-style male">Cartoon Male</option>
                                 </select>
                             </label>
                             <label>Mood
@@ -90,15 +99,26 @@ function createStudio() {
                                     <option value="with crisp, formal delivery">Formal</option>
                                 </select>
                             </label>
-                            <div class="sbds-age">
-                                <label class="sbds-check"><input name="setAge" type="checkbox"> Set age</label>
-                                <label>
-                                    <span>Age <output data-age for="sbds-age" hidden>30 years</output></span>
-                                    <input id="sbds-age" name="age" type="range" min="3" max="100" value="30" disabled>
+                            <label class="sbds-age">
+                                <span>Set age <output data-age for="sbds-age">30 years</output></span>
+                                <input id="sbds-age" name="age" type="range" min="3" max="100" value="30">
+                            </label>
+                            <div>
+                                <label>Language
+                                    <select name="language">
+                                        <option value="">Auto</option>
+                                        <option>English</option>
+                                        <option>French</option>
+                                        <option>German</option>
+                                        <option>Russian</option>
+                                        <option>Spanish</option>
+                                        <option value="custom">Custom…</option>
+                                    </select>
+                                </label>
+                                <label data-custom-language hidden>Custom language
+                                    <input name="customLanguage" maxlength="60" placeholder="e.g. Persian" disabled required>
                                 </label>
                             </div>
-                            <label>Language <input name="language" maxlength="60" placeholder="e.g. English"></label>
-                            <label>Accent <input name="accent" maxlength="80" placeholder="e.g. British"></label>
                             <label>Pitch
                                 <select name="pitch">
                                     <option value="">Any</option>
@@ -131,7 +151,10 @@ function createStudio() {
                         </div>
                         <label class="sbds-text">Negative prompt<textarea name="negative" rows="2" placeholder="Optional. Standard CFG at 1 may ignore this."></textarea></label>
                     </details>
-                    <button type="submit" class="sbds-primary" disabled>Generate</button>
+                    <div class="sbds-actions">
+                        <button type="submit" class="sbds-primary" disabled>Generate</button>
+                        <button type="button" data-action="prompt" aria-keyshortcuts="Shift+P" title="Shift+P outside text fields">Final Prompt</button>
+                    </div>
                 </form>
             </section>
             <section data-settings hidden>
@@ -154,7 +177,19 @@ function createStudio() {
                 <progress max="1" value="0" aria-label="Generation progress"></progress>
                 <span data-elapsed hidden></span>
             </div>
-        </footer>`;
+        </footer>
+        <dialog class="sbds-prompt-editor" aria-labelledby="sbds-prompt-title">
+            <form>
+                <h2 id="sbds-prompt-title">Final Prompt</h2>
+                <p>This is the positive prompt SBDS will send to LTX. Save edits to use them with these sound settings.</p>
+                <label>Prompt text <textarea rows="9"></textarea></label>
+                <div class="sbds-actions">
+                    <button type="submit" class="sbds-primary">Save prompt</button>
+                    <button type="button" data-action="reset-prompt">Reset to generated</button>
+                    <button type="button" data-action="close-prompt">Cancel</button>
+                </div>
+            </form>
+        </dialog>`;
     document.body.append(dialog);
 
     const form = dialog.querySelector("form");
@@ -171,7 +206,12 @@ function createStudio() {
     const audio = dialog.querySelector("audio");
     const download = dialog.querySelector("[data-download]");
     const takes = dialog.querySelector("[data-take]");
+    const promptButton = form.querySelector('[data-action="prompt"]');
+    const promptEditor = dialog.querySelector(".sbds-prompt-editor");
+    const promptText = promptEditor.querySelector("textarea");
     const selects = {};
+    let promptOverride = readSaved(promptKey);
+    let editorBase;
     let promptId;
     let busy = false;
     let ready = false;
@@ -231,7 +271,7 @@ function createStudio() {
             const missing = [...required].filter((type) => !definitions[type]);
             if (missing.length) throw new Error(`Missing ComfyUI nodes: ${missing.join(", ")}. See the SBDS installation guide.`);
 
-            const previous = { ...savedSettings(), ...Object.fromEntries(Object.entries(modelSettings()).filter(([, value]) => value)) };
+            const previous = { ...readSaved(settingsKey), ...Object.fromEntries(Object.entries(modelSettings()).filter(([, value]) => value)) };
             for (const [key, [node, input, preferred]] of Object.entries(modelInputs)) {
                 const [spec, info] = definitions[node].input.required[input] ?? [];
                 const choices = Array.isArray(spec) ? spec : info?.options;
@@ -266,18 +306,75 @@ function createStudio() {
         expand.setAttribute("aria-pressed", String(expanded));
     };
     refresh.onclick = refreshModels;
+    const voiceDesign = form.querySelector(".sbds-voice");
+    form.elements.audioType.onchange = () => {
+        const isVoice = form.elements.audioType.value === "voice";
+        voiceDesign.hidden = !isVoice;
+        voiceDesign.disabled = !isVoice;
+    };
+    const customLanguage = form.elements.customLanguage;
+    form.elements.language.onchange = () => {
+        const isCustom = form.elements.language.value === "custom";
+        dialog.querySelector("[data-custom-language]").hidden = !isCustom;
+        customLanguage.disabled = !isCustom;
+        if (isCustom) customLanguage.focus();
+    };
     const ageOutput = dialog.querySelector("[data-age]");
     const ageInput = form.elements.age;
-    form.elements.setAge.onchange = () => {
-        const enabled = form.elements.setAge.checked;
-        ageInput.disabled = !enabled;
-        ageOutput.hidden = !enabled;
-    };
     ageInput.oninput = () => {
         ageOutput.value = `${ageInput.value} years`;
     };
     form.elements.seedMode.onchange = () => {
         form.elements.seed.disabled = form.elements.seedMode.value === "random";
+    };
+
+    function generatedPrompt(data) {
+        const voice = data.get("audioType") === "voice" ? Object.fromEntries(data) : undefined;
+        return describeSound(String(data.get("text")), voice);
+    }
+
+    function finalPrompt(base) {
+        return promptOverride?.base === base ? promptOverride.text : base;
+    }
+
+    function openPromptEditor() {
+        editorBase = generatedPrompt(new FormData(form));
+        promptText.value = finalPrompt(editorBase);
+        promptText.setCustomValidity("");
+        promptEditor.showModal();
+        promptText.focus();
+    }
+
+    promptButton.onclick = openPromptEditor;
+    dialog.addEventListener("keydown", (event) => {
+        if (!settingsPanel.hidden || promptEditor.open || event.defaultPrevented || event.repeat) return;
+        if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.key.toLowerCase() !== "p") return;
+        if (event.target.closest('input, textarea, select, [contenteditable]')) return;
+        event.preventDefault();
+        openPromptEditor();
+    });
+    promptEditor.querySelector('[data-action="reset-prompt"]').onclick = () => {
+        promptText.value = editorBase;
+        promptText.setCustomValidity("");
+        promptText.focus();
+    };
+    promptEditor.querySelector('[data-action="close-prompt"]').onclick = () => promptEditor.close();
+    promptText.oninput = () => promptText.setCustomValidity("");
+    promptEditor.querySelector("form").onsubmit = (event) => {
+        event.preventDefault();
+        const edited = promptText.value.trim();
+        if (!edited && editorBase) {
+            promptText.setCustomValidity("Enter a prompt or reset to the generated text.");
+            promptText.reportValidity();
+            return;
+        }
+        promptOverride = edited === editorBase ? null : { base: editorBase, text: edited };
+        try {
+            localStorage.setItem(promptKey, JSON.stringify(promptOverride));
+        } catch {
+            // The edit can still be used for this open studio.
+        }
+        promptEditor.close();
     };
 
     api.addEventListener("progress", ({ detail }) => {
@@ -309,7 +406,7 @@ function createStudio() {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
                 text: String(data.get("text")), negative: String(data.get("negative")),
-                voice: Object.fromEntries(data),
+                finalPrompt: finalPrompt(generatedPrompt(data)),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
             });

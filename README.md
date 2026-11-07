@@ -28,13 +28,13 @@ SBDS itself has no extra pip or npm dependencies. Model weights stay in your Com
 
 ## First smoke run
 
-1. Try: “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
+1. Select **General audio (music, SFX)** and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
 2. Keep the duration at 5 seconds and Generation FPS at 24. Under **Generation settings**, keep 8 steps, `uni_pc`, `simple`, and CFG 1.
 3. Click **Generate**. Check the progress bar and elapsed time, then play or download the FLAC. ComfyUI stores it under `output/audio/SBDS/`.
 
 The model FPS and target seconds determine the latent frame count. They are separate from the decoded audio sample rate. At CFG 1, the default guider may ignore the negative prompt.
 
-For a voice, enter a description or a line in quotation marks, then choose optional details under **Voice design**. SBDS combines those choices with the description before sending it to LTX. Leave Voice design empty for music or sound effects.
+For a voice, enter a description or a line in quotation marks and choose its traits under **Voice design**. **Final Prompt** shows the text that will be sent to LTX. Saved edits apply to that generated prompt in this browser. Use **Reset to generated** and save to clear the edit. Choose **Custom** in the language menu to enter a language by name.
 
 ## Development checkpoints
 

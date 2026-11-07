@@ -8,12 +8,11 @@ export const modelInputs = {
     scheduler: ["BasicScheduler", "scheduler", /^simple$/],
 };
 
-function describeSound(text, voice = {}) {
+export function describeSound(text, voice = {}) {
     const { voiceType, age, mood, delivery, pitch, pace } = voice;
-    const language = voice.language?.trim();
-    const accent = voice.accent?.trim();
+    const language = (voice.language === "custom" ? voice.customLanguage : voice.language)?.trim();
     const description = text.trim();
-    if (![voiceType, age, mood, delivery, pitch, pace, language, accent].some(Boolean)) return description;
+    if (!description || ![voiceType, age, mood, delivery, pitch, pace, language].some(Boolean)) return description;
 
     const identity = voiceType ? `A ${voiceType} voice` : "A voice";
     const ageDescription = age ? ` that sounds about ${age} years old` : "";
@@ -23,7 +22,6 @@ function describeSound(text, voice = {}) {
         `${identity}${ageDescription}.`,
         mood && `The voice sounds ${mood}.`,
         pitch && `The voice has a ${pitch} pitch.`,
-        accent && `The speaker's accent is ${accent}.`,
         speaking && `The speaker talks ${speaking}.`,
         quotedLine ? `The speaker says ${description}` : description,
     ].filter(Boolean).join(" ");
@@ -31,7 +29,8 @@ function describeSound(text, voice = {}) {
 
 export function buildAudioGraph(options) {
     const { text, negative, model, encoder, vae, sampler, scheduler, steps, fps, seconds, seed, cfg } = options;
-    if (!text.trim()) throw new Error("Describe the sound you want to generate.");
+    const finalPrompt = options.finalPrompt ?? describeSound(text, options.voice);
+    if (!finalPrompt.trim()) throw new Error("Describe the sound you want to generate.");
     if (![model, encoder, vae, sampler, scheduler].every(Boolean)) {
         throw new Error("Choose the model, text encoder, audio VAE, sampler and scheduler in Settings.");
     }
@@ -46,7 +45,7 @@ export function buildAudioGraph(options) {
         "2": node("LTXVAudioOnlyModel", { model: link(1) }),
         "3": node("CLIPLoader", { clip_name: encoder, type: "ltxv", device: "default" }),
         "4": node("VAELoader", { vae_name: vae }),
-        "5": node("CLIPTextEncode", { text: describeSound(text, options.voice), clip: link(3) }),
+        "5": node("CLIPTextEncode", { text: finalPrompt, clip: link(3) }),
         "6": node("CLIPTextEncode", { text: negative, clip: link(3) }),
         "7": node("LTXVConditioning", { positive: link(5), negative: link(6), frame_rate: fps }),
         "8": node("LTXVEmptyLatentAudio", { audio_vae: link(4), frames_number: frames, frame_rate: fps, batch_size: 1 }),
