@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
 import { createResourceMonitor, resourceMeters } from "./resources.js";
+import { createTakeControls, latestTakeControls } from "./audio.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
@@ -192,8 +193,7 @@ function createStudio() {
             <section data-latest-take>
                 <p class="sbds-label">LATEST TAKE</p>
                 <p data-take>No audio generated yet.</p>
-                <audio controls hidden></audio>
-                <a data-download hidden>Download audio</a>
+                ${latestTakeControls}
             </section>
         </main>
         <footer>
@@ -230,8 +230,7 @@ function createStudio() {
     const status = footer.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
     const elapsed = dialog.querySelector("[data-elapsed]");
-    const audio = dialog.querySelector("audio");
-    const download = dialog.querySelector("[data-download]");
+    const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api);
     const takes = dialog.querySelector("[data-take]");
     const promptButton = form.querySelector('[data-action="prompt"]');
     const promptEditor = dialog.querySelector(".sbds-prompt-editor");
@@ -322,6 +321,7 @@ function createStudio() {
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
     dialog.addEventListener("close", () => monitor.stop());
+    dialog.addEventListener("close", () => dialog.querySelector("audio").pause());
     purgeButton.onclick = async () => {
         if (purgeButton.disabled) return;
         clearTimeout(purgeFeedback);
@@ -488,15 +488,7 @@ function createStudio() {
                 const failure = result.status?.messages?.find(([type]) => type === "execution_error");
                 throw new Error(failure?.[1]?.exception_message || "Generation ended without an audio file.");
             }
-            const params = new URLSearchParams({
-                filename: output.filename, subfolder: output.subfolder, type: output.type,
-            });
-            const url = api.apiURL(`/view?${params}`);
-            audio.src = url;
-            audio.hidden = false;
-            download.href = url;
-            download.download = output.filename;
-            download.hidden = false;
+            showTake(output);
             takes.textContent = `${output.filename} · Seed ${seed}`;
             progress.value = 1;
             setStatus("Take ready", "done");
