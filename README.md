@@ -34,6 +34,8 @@ SBDS itself has no extra pip or npm dependencies. Model weights stay in your Com
 
 The model FPS and target seconds determine the latent frame count. They are separate from the decoded audio sample rate. At CFG 1, the default guider may ignore the negative prompt.
 
+SBDS requests a ComfyUI memory cleanup after saving each take. **Purge** requests the same cleanup manually. ComfyUI unloads its models and clears its execution cache between jobs, so the next take may take longer to start. The header shows the server's CPU and RAM usage, plus NVIDIA GPU and VRAM usage when `nvidia-smi` is available on the server.
+
 For a voice, enter a description or a line in quotation marks and choose its traits under **Voice design**. **Final Prompt** shows the text that will be sent to LTX. Saved edits apply to that generated prompt in this browser. Use **Reset to generated** and save to clear the edit. Choose **Custom** in the language menu to enter a language by name.
 
 ## Development checkpoints

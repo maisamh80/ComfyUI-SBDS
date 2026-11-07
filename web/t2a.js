@@ -88,5 +88,6 @@ export function buildAudioGraph(options) {
         "17": node("LTXVSeparateAVLatent", { av_latent: link(16) }),
         "18": node("LTXVAudioVAEDecode", { samples: link(17, 1), audio_vae: link(4) }),
         [outputNode]: node("SaveAudio", { audio: link(18), filename_prefix: "audio/SBDS/take" }),
+        "19": node("SBDSReleaseAfterTake", { saved_audio: link(outputNode) }),
     };
 }

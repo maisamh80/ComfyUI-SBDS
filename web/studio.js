@@ -1,22 +1,13 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
+import { createResourceMonitor, resourceMeters } from "./resources.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
 const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
     sampler: "Sampler", scheduler: "Scheduler",
-};
-const audioPromptGuidance = {
-    music: {
-        lead: "Generate a music cue.",
-        guidance: "Keep the requested performance clear and in focus. Preserve the described setting, ambience, and acoustics. Omit spoken dialogue, unrelated sound effects, and extra reverb unless the description calls for them.",
-    },
-    sfx: {
-        lead: "Generate a sound effect.",
-        guidance: "Keep the requested sound clean and distinct. Preserve the described setting, sound layers, and acoustics. Omit dialogue, background music, unrelated sounds, and extra reverb unless the description calls for them.",
-    },
 };
 let studio;
 
@@ -37,6 +28,15 @@ async function request(path, options) {
     return data;
 }
 
+async function purgeMemory() {
+    const response = await api.fetchApi("/free", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unload_models: true, free_memory: true }),
+    });
+    if (!response.ok) throw new Error(`Memory cleanup request failed (HTTP ${response.status}).`);
+}
+
 function readSaved(key) {
     try {
         return JSON.parse(localStorage.getItem(key));
@@ -50,8 +50,10 @@ function createStudio() {
     dialog.className = "sbds";
     dialog.innerHTML = `
         <header>
-            <div><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
+            <div class="sbds-title"><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
+            ${resourceMeters}
             <div class="sbds-actions">
+                <button type="button" data-action="purge" title="Unload models and clear ComfyUI caches">Purge</button>
                 <button type="button" data-action="settings">Settings</button>
                 <button type="button" data-action="expand" aria-pressed="false">Expand</button>
                 <button type="button" data-action="close" aria-label="Close studio">✕</button>
@@ -209,6 +211,8 @@ function createStudio() {
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
     const settingsButton = dialog.querySelector('[data-action="settings"]');
+    const purgeButton = dialog.querySelector('[data-action="purge"]');
+    const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), () => request("/sbds/resources"));
     const settingsPanel = dialog.querySelector("[data-settings]");
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
     const footer = dialog.querySelector("footer");
@@ -223,10 +227,12 @@ function createStudio() {
     const promptText = promptEditor.querySelector("textarea");
     const selects = {};
     let promptOverride = readSaved(promptKey);
-    let editorDraft;
+    let editorBase;
     let promptId;
     let busy = false;
     let ready = false;
+    let purging = false;
+    let purgeFeedback;
 
     for (const [key, title] of Object.entries(settingsLabels)) {
         const label = document.createElement("label");
@@ -248,8 +254,9 @@ function createStudio() {
     }
 
     function updateControls() {
-        generate.disabled = busy || !ready || Object.values(selects).some((select) => !select.value);
+        generate.disabled = busy || purging || !ready || Object.values(selects).some((select) => !select.value);
         refresh.disabled = busy;
+        purgeButton.disabled = busy || purging;
     }
 
     function setStatus(message, state) {
@@ -303,6 +310,29 @@ function createStudio() {
     }
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
+    dialog.addEventListener("close", () => monitor.stop());
+    purgeButton.onclick = async () => {
+        if (busy || purging) return;
+        clearTimeout(purgeFeedback);
+        purging = true;
+        updateControls();
+        purgeButton.textContent = "Purging…";
+        try {
+            await purgeMemory();
+            purgeButton.textContent = "Queued";
+            void monitor.refresh();
+        } catch (error) {
+            purgeButton.textContent = "Failed";
+            purgeButton.title = error.message;
+        } finally {
+            purging = false;
+            updateControls();
+            purgeFeedback = setTimeout(() => {
+                purgeButton.textContent = "Purge";
+                purgeButton.title = "Unload models and clear ComfyUI caches";
+            }, 3000);
+        }
+    };
     settingsButton.onclick = () => {
         const showSettings = settingsPanel.hidden;
         settingsPanel.hidden = !showSettings;
@@ -340,25 +370,24 @@ function createStudio() {
         form.elements.seed.disabled = form.elements.seedMode.value === "random";
     };
 
-    function buildPromptDraft(data) {
+    function generatedPrompt(data) {
         const text = String(data.get("text")).trim();
-        const type = data.get("audioType");
-        const mode = audioPromptGuidance[type];
-        if (text && mode) {
-            const base = `${mode.lead} ${text}`;
-            return { base, generated: `${base}\n\n${mode.guidance}` };
+        if (!text) return "";
+        switch (data.get("audioType")) {
+            case "voice": return describeSound(text, Object.fromEntries(data));
+            case "music": return `Generate a music cue. ${text}`;
+            case "sfx": return `Generate a sound effect. ${text}`;
+            default: return text;
         }
-        const base = type === "voice" ? describeSound(text, Object.fromEntries(data)) : text;
-        return { base, generated: base };
     }
 
-    function finalPrompt({ base, generated }) {
-        return promptOverride?.base === base ? promptOverride.text : generated;
+    function finalPrompt(base) {
+        return promptOverride?.base === base ? promptOverride.text : base;
     }
 
     function openPromptEditor() {
-        editorDraft = buildPromptDraft(new FormData(form));
-        promptText.value = finalPrompt(editorDraft);
+        editorBase = generatedPrompt(new FormData(form));
+        promptText.value = finalPrompt(editorBase);
         promptText.setCustomValidity("");
         promptEditor.showModal();
         promptText.focus();
@@ -373,7 +402,7 @@ function createStudio() {
         openPromptEditor();
     });
     promptEditor.querySelector('[data-action="reset-prompt"]').onclick = () => {
-        promptText.value = editorDraft.generated;
+        promptText.value = editorBase;
         promptText.setCustomValidity("");
         promptText.focus();
     };
@@ -382,13 +411,12 @@ function createStudio() {
     promptEditor.querySelector("form").onsubmit = (event) => {
         event.preventDefault();
         const edited = promptText.value.trim();
-        const { base, generated } = editorDraft;
-        if (!edited && generated) {
+        if (!edited && editorBase) {
             promptText.setCustomValidity("Enter a prompt or reset to the generated text.");
             promptText.reportValidity();
             return;
         }
-        promptOverride = edited === generated ? null : { base, text: edited };
+        promptOverride = edited === editorBase ? null : { base: editorBase, text: edited };
         try {
             localStorage.setItem(promptKey, JSON.stringify(promptOverride));
         } catch {
@@ -426,7 +454,7 @@ function createStudio() {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
                 text: String(data.get("text")), negative: String(data.get("negative")),
-                finalPrompt: finalPrompt(buildPromptDraft(data)),
+                finalPrompt: finalPrompt(generatedPrompt(data)),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
             });
@@ -445,7 +473,7 @@ function createStudio() {
                 result = history[promptId];
             }
             const output = result.outputs?.[outputNode]?.audio?.[0];
-            if (!output) {
+            if (!output || result.status?.status_str === "error") {
                 const failure = result.status?.messages?.find(([type]) => type === "execution_error");
                 throw new Error(failure?.[1]?.exception_message || "Generation ended without an audio file.");
             }
@@ -464,6 +492,13 @@ function createStudio() {
         } catch (error) {
             progress.value = 0;
             setStatus(error.message, "error");
+            if (promptId) {
+                try {
+                    await purgeMemory();
+                } catch (cleanupError) {
+                    setStatus(`${error.message} · ${cleanupError.message}`, "error");
+                }
+            }
         } finally {
             clearInterval(timer);
             updateElapsed();
@@ -474,7 +509,11 @@ function createStudio() {
     };
 
     void refreshModels();
-    return dialog;
+    return () => {
+        if (dialog.open) return;
+        dialog.showModal();
+        monitor.start();
+    };
 }
 
 app.registerExtension({
@@ -483,7 +522,7 @@ app.registerExtension({
         if (node.comfyClass !== "SBDSStudio") return;
         node.addWidget("button", "Open Studio", null, () => {
             studio ??= createStudio();
-            if (!studio.open) studio.showModal();
+            studio();
         });
     },
 });
