@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { buildAudioGraph, describeSound, modelInputs, outputNode, releaseNodeType } from "./t2a.js";
+import { createResourceMonitor, resourceMeters } from "./resources.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
@@ -36,6 +37,15 @@ async function purgeMemory() {
     if (!response.ok) throw new Error(`Memory cleanup request failed (HTTP ${response.status}).`);
 }
 
+async function readResourceStats() {
+    const response = await api.fetchApi("/sbds/resources");
+    if (response.status === 404) {
+        throw new Error("Restart ComfyUI to load SBDS resource monitoring.");
+    }
+    if (!response.ok) throw new Error(`SBDS resource monitoring returned HTTP ${response.status}.`);
+    return response.json();
+}
+
 function readSaved(key) {
     try {
         return JSON.parse(localStorage.getItem(key));
@@ -50,6 +60,7 @@ function createStudio() {
     dialog.innerHTML = `
         <header>
             <div class="sbds-title"><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
+            ${resourceMeters}
             <div class="sbds-actions">
                 <button type="button" data-action="settings">Settings</button>
                 <button type="button" data-action="expand" aria-pressed="false">Expand</button>
@@ -209,6 +220,7 @@ function createStudio() {
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
     const settingsButton = dialog.querySelector('[data-action="settings"]');
+    const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), readResourceStats);
     const settingsPanel = dialog.querySelector("[data-settings]");
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
     const footer = dialog.querySelector("footer");
@@ -306,6 +318,7 @@ function createStudio() {
     }
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
+    dialog.addEventListener("close", () => monitor.stop());
     settingsButton.onclick = () => {
         const showSettings = settingsPanel.hidden;
         settingsPanel.hidden = !showSettings;
@@ -488,6 +501,7 @@ function createStudio() {
     return () => {
         if (dialog.open) return;
         dialog.showModal();
+        monitor.start();
     };
 }
 
