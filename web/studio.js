@@ -68,8 +68,7 @@ function createStudio() {
                         <div class="sbds-fields">
                             <label>Voice type
                                 <select name="voiceType">
-                                    <option value="">Any</option>
-                                    <option value="female">Female</option>
+                                    <option value="female" selected>Female</option>
                                     <option value="male">Male</option>
                                     <option value="androgynous">Androgynous</option>
                                     <option value="cartoon-style female">Cartoon Female</option>
@@ -78,11 +77,10 @@ function createStudio() {
                             </label>
                             <label>Mood
                                 <select name="mood">
-                                    <option value="">Any</option>
                                     <option value="warm and reassuring">Warm</option>
                                     <option value="curious and alert">Curious</option>
                                     <option value="playful and amused">Playful</option>
-                                    <option value="calm and relaxed">Calm</option>
+                                    <option value="calm and relaxed" selected>Calm</option>
                                     <option value="excited and delighted">Excited</option>
                                     <option value="worried and slightly tense">Worried</option>
                                     <option value="sad and subdued">Sad</option>
@@ -91,12 +89,11 @@ function createStudio() {
                             </label>
                             <label>Delivery
                                 <select name="delivery">
-                                    <option value="">Any</option>
                                     <option value="with an everyday conversational delivery">Conversational</option>
                                     <option value="in a soft whisper">Whisper</option>
                                     <option value="with a wise, measured delivery and thoughtful pauses">Wise and measured</option>
                                     <option value="with the expressive delivery of a storyteller">Storytelling</option>
-                                    <option value="with crisp, formal delivery">Formal</option>
+                                    <option value="with crisp, formal delivery" selected>Formal</option>
                                 </select>
                             </label>
                             <label class="sbds-age">
@@ -107,7 +104,7 @@ function createStudio() {
                                 <label>Language
                                     <select name="language">
                                         <option value="">Auto</option>
-                                        <option>English</option>
+                                        <option selected>English</option>
                                         <option>French</option>
                                         <option>German</option>
                                         <option>Russian</option>
@@ -121,17 +118,15 @@ function createStudio() {
                             </div>
                             <label>Pitch
                                 <select name="pitch">
-                                    <option value="">Any</option>
                                     <option value="low">Low</option>
-                                    <option value="mid-range">Medium</option>
+                                    <option value="mid-range" selected>Medium</option>
                                     <option value="high">High</option>
                                 </select>
                             </label>
                             <label>Speaking pace
                                 <select name="pace">
-                                    <option value="">Any</option>
                                     <option value="at a slow, unhurried pace">Slow</option>
-                                    <option value="at an even, natural pace">Natural</option>
+                                    <option value="at an even, natural pace" selected>Natural</option>
                                     <option value="at a quick, clear pace">Fast</option>
                                 </select>
                             </label>

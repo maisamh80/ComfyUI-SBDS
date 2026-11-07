@@ -8,20 +8,49 @@ export const modelInputs = {
     scheduler: ["BasicScheduler", "scheduler", /^simple$/],
 };
 
+const speakerAgeGroups = [
+    { under: 6, roles: ["young boy", "young girl", "young child"], delivery: "with a young child's voice" },
+    { under: 13, roles: ["school-age boy", "school-age girl", "school-age child"], delivery: "with a child's voice" },
+    { under: 18, roles: ["teenage boy", "teenage girl", "teenager"] },
+    { under: 30, roles: ["young man", "young woman", "young adult"] },
+    { under: 45, roles: ["adult man", "adult woman", "adult"] },
+    { under: 65, roles: ["middle-aged man", "middle-aged woman", "middle-aged adult"] },
+    { under: 85, roles: ["older man", "older woman", "older adult"] },
+    { under: Infinity, roles: ["very elderly man", "very elderly woman", "very elderly adult"] },
+];
+
+function describeSpeaker(voiceType, age) {
+    const years = Number(age);
+    const isAgeSet = Number.isInteger(years) && years >= 3 && years <= 100;
+    if (!isAgeSet) {
+        const voice = voiceType ? `${voiceType} voice` : "voice";
+        return `${/^[aeiou]/i.test(voice) ? "An" : "A"} ${voice}.`;
+    }
+
+    const gender = voiceType.replace(/^cartoon-style /, "");
+    const { roles, delivery } = speakerAgeGroups.find(({ under }) => years < under);
+    const [boyOrMan, girlOrWoman, neutral] = roles;
+    const role = gender === "male" ? boyOrMan : gender === "female" ? girlOrWoman : neutral;
+    const speaker = voiceType.startsWith("cartoon-style ") ? `cartoon-style ${role}` : role;
+    const article = /^[aeiou]/i.test(speaker) ? "An" : "A";
+    return [
+        `${article} ${speaker}, about ${years} years old, speaks${delivery ? ` ${delivery}` : ""}.`,
+        gender === "androgynous" && "The speaker has an androgynous voice.",
+    ].filter(Boolean).join(" ");
+}
+
 export function describeSound(text, voice = {}) {
     const { voiceType, age, mood, delivery, pitch, pace } = voice;
     const language = (voice.language === "custom" ? voice.customLanguage : voice.language)?.trim();
     const description = text.trim();
     if (!description || ![voiceType, age, mood, delivery, pitch, pace, language].some(Boolean)) return description;
 
-    const identity = voiceType ? `A ${voiceType} voice` : "A voice";
-    const ageDescription = age ? ` that sounds about ${age} years old` : "";
     const speaking = [language && `in ${language}`, delivery, pace].filter(Boolean).join(" ");
     const quotedLine = /^(?:"[\s\S]+"|“[\s\S]+”)$/.test(description);
     return [
-        `${identity}${ageDescription}.`,
+        describeSpeaker(voiceType ?? "", age),
         mood && `The voice sounds ${mood}.`,
-        pitch && `The voice has a ${pitch} pitch.`,
+        pitch && `The voice has a ${pitch} pitch${age ? " for the speaker's age" : ""}.`,
         speaking && `The speaker talks ${speaking}.`,
         quotedLine ? `The speaker says ${description}` : description,
     ].filter(Boolean).join(" ");
