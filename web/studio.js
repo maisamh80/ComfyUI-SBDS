@@ -55,8 +55,9 @@ function createStudio() {
                 <form>
                     <label class="sbds-audio-type">Audio type
                         <select name="audioType">
-                            <option value="voice">Voice</option>
-                            <option value="general">General audio (music, SFX)</option>
+                            <option value="voice">Character Voice</option>
+                            <option value="music">Music</option>
+                            <option value="sfx">Sound Effect</option>
                         </select>
                     </label>
                     <label class="sbds-text">Sound description
@@ -108,6 +109,12 @@ function createStudio() {
                                     <option>German</option>
                                     <option>Russian</option>
                                     <option>Spanish</option>
+                                    <optgroup label="Experimental">
+                                        <option value="Mandarin Chinese">Chinese (Mandarin)</option>
+                                        <option>Korean</option>
+                                        <option>Japanese</option>
+                                        <option>Arabic</option>
+                                    </optgroup>
                                     <option value="custom">Custom…</option>
                                 </select>
                             </label>
@@ -324,8 +331,14 @@ function createStudio() {
     };
 
     function generatedPrompt(data) {
-        const voice = data.get("audioType") === "voice" ? Object.fromEntries(data) : undefined;
-        return describeSound(String(data.get("text")), voice);
+        const text = String(data.get("text")).trim();
+        if (!text) return "";
+        switch (data.get("audioType")) {
+            case "voice": return describeSound(text, Object.fromEntries(data));
+            case "music": return `Generate a music cue. ${text}`;
+            case "sfx": return `Generate a sound effect. ${text}`;
+            default: return text;
+        }
     }
 
     function finalPrompt(base) {

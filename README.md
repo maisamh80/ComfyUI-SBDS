@@ -28,7 +28,7 @@ SBDS itself has no extra pip or npm dependencies. Model weights stay in your Com
 
 ## First smoke run
 
-1. Select **General audio (music, SFX)** and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
+1. Select **Sound Effect** and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
 2. Keep the duration at 5 seconds and Generation FPS at 24. Under **Generation settings**, keep 8 steps, `uni_pc`, `simple`, and CFG 1.
 3. Click **Generate**. Check the progress bar and elapsed time, then play or download the FLAC. ComfyUI stores it under `output/audio/SBDS/`.
 
