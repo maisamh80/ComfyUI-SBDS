@@ -41,12 +41,13 @@ function createStudio() {
         <header>
             <div><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
             <div class="sbds-actions">
+                <button type="button" data-action="settings">Settings</button>
                 <button type="button" data-action="expand" aria-pressed="false">Expand</button>
                 <button type="button" data-action="close" aria-label="Close studio">✕</button>
             </div>
         </header>
         <main>
-            <section>
+            <section data-identity>
                 <p class="sbds-label">IDENTITY / TEXT TO AUDIO</p>
                 <h1>Make a sound.</h1>
                 <p>Describe a character voice, musical cue, or sound effect for LTX.</p>
@@ -61,7 +62,7 @@ function createStudio() {
                     </div>
                     <details>
                         <summary>Generation settings</summary>
-                        <div class="sbds-fields">
+                        <div class="sbds-fields" data-generation-fields>
                             <label>Generation FPS<input name="fps" type="number" min="1" max="60" step="1" value="24" required></label>
                             <label>Steps<input name="steps" type="number" min="1" max="100" step="1" value="8" required></label>
                             <label>CFG<input name="cfg" type="number" min="0" max="20" step="0.1" value="1" required></label>
@@ -71,28 +72,37 @@ function createStudio() {
                     <button type="submit" class="sbds-primary" disabled>Generate</button>
                 </form>
             </section>
-            <aside>
+            <section data-settings hidden>
                 <p class="sbds-label">SETTINGS</p>
-                <h2>Model setup</h2>
-                <div data-fields></div>
+                <h2 tabindex="-1">Model setup</h2>
+                <div data-model-fields></div>
                 <button type="button" data-action="refresh">Refresh model list</button>
-            </aside>
-            <section class="sbds-take">
+            </section>
+            <section data-latest-take>
                 <p class="sbds-label">LATEST TAKE</p>
                 <p data-take>No audio generated yet.</p>
                 <audio controls hidden></audio>
                 <a data-download hidden>Download audio</a>
             </section>
         </main>
-        <footer><span role="status">Loading ComfyUI model lists…</span><progress max="1" value="0"></progress></footer>`;
+        <footer>
+            <span role="status">Loading ComfyUI model lists…</span>
+            <div class="sbds-progress">
+                <progress max="1" value="0" aria-label="Generation progress"></progress>
+                <span data-elapsed hidden></span>
+            </div>
+        </footer>`;
     document.body.append(dialog);
 
     const form = dialog.querySelector("form");
     const generate = form.querySelector('button[type="submit"]');
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
+    const settingsButton = dialog.querySelector('[data-action="settings"]');
+    const settingsPanel = dialog.querySelector("[data-settings]");
     const status = dialog.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
+    const elapsed = dialog.querySelector("[data-elapsed]");
     const audio = dialog.querySelector("audio");
     const download = dialog.querySelector("[data-download]");
     const takes = dialog.querySelector("[data-take]");
@@ -106,11 +116,13 @@ function createStudio() {
         const select = document.createElement("select");
         select.setAttribute("aria-label", title);
         label.append(title, select);
-        dialog.querySelector("[data-fields]").append(label);
+        const fieldGroup = key === "sampler" || key === "scheduler" ? "[data-generation-fields]" : "[data-model-fields]";
+        dialog.querySelector(fieldGroup).append(label);
         selects[key] = select;
         select.addEventListener("change", () => {
             localStorage.setItem(settingsKey, JSON.stringify(modelSettings()));
             updateControls();
+            if (ready && dialog.dataset.state === "idle") updateSetupStatus();
         });
     }
 
@@ -126,6 +138,12 @@ function createStudio() {
     function setStatus(message, state) {
         status.textContent = message;
         dialog.dataset.state = state;
+    }
+
+    function updateSetupStatus() {
+        const missing = Object.entries(selects).filter(([, select]) => !select.value);
+        const fields = missing.map(([key]) => settingsLabels[key]).join(", ");
+        setStatus(fields ? `Choose ${fields} in Settings or Generation settings.` : "Ready", "idle");
     }
 
     async function refreshModels() {
@@ -152,8 +170,7 @@ function createStudio() {
                 select.value = choices.includes(previous[key]) ? previous[key] : (choices.find((value) => preferred.test(value)) ?? "");
             }
             ready = true;
-            const allSelected = Object.values(selects).every((select) => select.value);
-            setStatus(allSelected ? "Ready" : "Choose the required files in Model setup.", "idle");
+            updateSetupStatus();
         } catch (error) {
             setStatus(error.message, "error");
         } finally {
@@ -162,6 +179,14 @@ function createStudio() {
     }
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
+    settingsButton.onclick = () => {
+        const showSettings = settingsPanel.hidden;
+        settingsPanel.hidden = !showSettings;
+        dialog.querySelector("[data-identity]").hidden = showSettings;
+        dialog.querySelector("[data-latest-take]").hidden = showSettings;
+        settingsButton.textContent = showSettings ? "Back to Identity" : "Settings";
+        if (showSettings) settingsPanel.querySelector("h2").focus();
+    };
     expand.onclick = () => {
         const expanded = dialog.classList.toggle("sbds-expanded");
         expand.textContent = expanded ? "Compact" : "Expand";
@@ -187,7 +212,15 @@ function createStudio() {
             : crypto.getRandomValues(new Uint32Array(1))[0];
         busy = true;
         updateControls();
-        progress.removeAttribute("value");
+        progress.value = 0;
+        const startedAt = performance.now();
+        const updateElapsed = () => {
+            const seconds = Math.floor((performance.now() - startedAt) / 1000);
+            elapsed.textContent = `Elapsed ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+        };
+        elapsed.hidden = false;
+        updateElapsed();
+        const timer = setInterval(updateElapsed, 250);
         setStatus("Submitting to ComfyUI…", "running");
         try {
             const prompt = buildAudioGraph({
@@ -231,6 +264,8 @@ function createStudio() {
             progress.value = 0;
             setStatus(error.message, "error");
         } finally {
+            clearInterval(timer);
+            updateElapsed();
             busy = false;
             promptId = undefined;
             updateControls();

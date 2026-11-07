@@ -22,15 +22,15 @@ An LTX-powered audio production studio inside ComfyUI. This first checkpoint pro
    | `models/text_encoders/` | LTX 2.5 Gemma text encoder with projection |
    | `models/vae/` | LTX 2.5 Audio VAE |
 
-4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open Studio**. Verify all selections in **Model setup**.
+4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open Studio**. Verify the model files under **Settings → Model setup**.
 
 SBDS itself has no extra pip or npm dependencies. Model weights stay in your ComfyUI installation. Use an appropriate quantization and the ComfyUI memory settings for your hardware. The development workflow uses an INT8 transformer and text encoder. Start with a short sample when testing a new installation.
 
 ## First smoke run
 
 1. Try: “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
-2. Keep the initial settings of 5 seconds, 24 FPS, 8 steps, `uni_pc`, `simple`, and CFG 1.
-3. Click **Generate**. Verify that a take appears and can be played and downloaded as FLAC. ComfyUI stores it under `output/audio/SBDS/`.
+2. Keep the duration at 5 seconds. Under **Generation settings**, keep 24 FPS, 8 steps, `uni_pc`, `simple`, and CFG 1.
+3. Click **Generate**. Check the progress bar and elapsed time, then play or download the FLAC. ComfyUI stores it under `output/audio/SBDS/`.
 
 The model FPS and target seconds determine the latent frame count. They are separate from the decoded audio sample rate. At CFG 1, the default guider may ignore the negative prompt.
 
