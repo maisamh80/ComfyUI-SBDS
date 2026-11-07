@@ -1,4 +1,5 @@
 export const outputNode = "15";
+export const releaseNodeType = "SBDSReleaseAfterTake";
 
 export const modelInputs = {
     model: ["UNETLoader", "unet_name", /ltx.*distill/i],
@@ -69,7 +70,7 @@ export function buildAudioGraph(options) {
     }
     const link = (id, index = 0) => [String(id), index];
     const node = (class_type, inputs) => ({ class_type, inputs });
-    return {
+    const graph = {
         "1": node("UNETLoader", { unet_name: model, weight_dtype: "default" }),
         "2": node("LTXVAudioOnlyModel", { model: link(1) }),
         "3": node("CLIPLoader", { clip_name: encoder, type: "ltxv", device: "default" }),
@@ -88,6 +89,9 @@ export function buildAudioGraph(options) {
         "17": node("LTXVSeparateAVLatent", { av_latent: link(16) }),
         "18": node("LTXVAudioVAEDecode", { samples: link(17, 1), audio_vae: link(4) }),
         [outputNode]: node("SaveAudio", { audio: link(18), filename_prefix: "audio/SBDS/take" }),
-        "19": node("SBDSReleaseAfterTake", { saved_audio: link(outputNode) }),
     };
+    if (options.releaseAfterTake !== false) {
+        graph["19"] = node(releaseNodeType, { saved_audio: link(outputNode) });
+    }
+    return graph;
 }

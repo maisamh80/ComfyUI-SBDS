@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
+import { buildAudioGraph, describeSound, modelInputs, outputNode, releaseNodeType } from "./t2a.js";
 import { createResourceMonitor, resourceMeters } from "./resources.js";
 
 const settingsKey = "sbds-model-setup";
@@ -231,6 +231,7 @@ function createStudio() {
     let promptId;
     let busy = false;
     let ready = false;
+    let releaseAfterTake = false;
     let purging = false;
     let purgeFeedback;
 
@@ -286,9 +287,11 @@ function createStudio() {
             const required = new Set(Object.values(buildAudioGraph({
                 text: "Check node availability.", model: "model", encoder: "encoder",
                 vae: "vae", sampler: "sampler", scheduler: "scheduler", fps: 24, seconds: 1,
+                releaseAfterTake: false,
             })).map((node) => node.class_type));
             const missing = [...required].filter((type) => !definitions[type]);
             if (missing.length) throw new Error(`Missing ComfyUI nodes: ${missing.join(", ")}. See the SBDS installation guide.`);
+            releaseAfterTake = Boolean(definitions[releaseNodeType] && definitions.SaveAudio.output?.[0] === "AUDIO");
 
             const previous = { ...readSaved(settingsKey), ...Object.fromEntries(Object.entries(modelSettings()).filter(([, value]) => value)) };
             for (const [key, [node, input, preferred]] of Object.entries(modelInputs)) {
@@ -450,6 +453,7 @@ function createStudio() {
         updateElapsed();
         const timer = setInterval(updateElapsed, 250);
         setStatus("Submitting to ComfyUI…", "running");
+        let cleanupQueuedInGraph = false;
         try {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
@@ -457,6 +461,7 @@ function createStudio() {
                 finalPrompt: finalPrompt(generatedPrompt(data)),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
+                releaseAfterTake,
             });
             const queued = await request("/prompt", {
                 method: "POST",
@@ -477,6 +482,7 @@ function createStudio() {
                 const failure = result.status?.messages?.find(([type]) => type === "execution_error");
                 throw new Error(failure?.[1]?.exception_message || "Generation ended without an audio file.");
             }
+            cleanupQueuedInGraph = releaseAfterTake;
             const params = new URLSearchParams({
                 filename: output.filename, subfolder: output.subfolder, type: output.type,
             });
@@ -492,16 +498,16 @@ function createStudio() {
         } catch (error) {
             progress.value = 0;
             setStatus(error.message, "error");
-            if (promptId) {
-                try {
-                    await purgeMemory();
-                } catch (cleanupError) {
-                    setStatus(`${error.message} · ${cleanupError.message}`, "error");
-                }
-            }
         } finally {
             clearInterval(timer);
             updateElapsed();
+            if (promptId && !cleanupQueuedInGraph) {
+                try {
+                    await purgeMemory();
+                } catch (cleanupError) {
+                    setStatus(`${status.textContent} · ${cleanupError.message}`, dialog.dataset.state);
+                }
+            }
             busy = false;
             promptId = undefined;
             updateControls();
