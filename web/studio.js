@@ -53,17 +53,79 @@ function createStudio() {
                 <p>Describe a character voice, musical cue, or sound effect for LTX.</p>
                 <form>
                     <label class="sbds-text">Sound description
-                        <textarea name="text" rows="5" required placeholder="A warm, reassuring voice speaking quietly in a small room…"></textarea>
+                        <textarea name="text" rows="4" required placeholder="Describe a sound or enter a line of dialogue in quotes…"></textarea>
                     </label>
+                    <fieldset class="sbds-voice">
+                        <legend>Voice design</legend>
+                        <p>Optional voice details for a character or a line of dialogue.</p>
+                        <div class="sbds-fields">
+                            <label>Voice type
+                                <select name="voiceType">
+                                    <option value="">Any</option>
+                                    <option value="female">Female</option>
+                                    <option value="male">Male</option>
+                                    <option value="androgynous">Androgynous</option>
+                                </select>
+                            </label>
+                            <label>Mood
+                                <select name="mood">
+                                    <option value="">Any</option>
+                                    <option value="warm and reassuring">Warm</option>
+                                    <option value="curious and alert">Curious</option>
+                                    <option value="playful and amused">Playful</option>
+                                    <option value="calm and relaxed">Calm</option>
+                                    <option value="excited and delighted">Excited</option>
+                                    <option value="worried and slightly tense">Worried</option>
+                                    <option value="sad and subdued">Sad</option>
+                                    <option value="angry and tense">Angry</option>
+                                </select>
+                            </label>
+                            <label>Delivery
+                                <select name="delivery">
+                                    <option value="">Any</option>
+                                    <option value="with an everyday conversational delivery">Conversational</option>
+                                    <option value="in a soft whisper">Whisper</option>
+                                    <option value="with a wise, measured delivery and thoughtful pauses">Wise and measured</option>
+                                    <option value="with the expressive delivery of a storyteller">Storytelling</option>
+                                    <option value="with crisp, formal delivery">Formal</option>
+                                </select>
+                            </label>
+                            <div class="sbds-age">
+                                <label class="sbds-check"><input name="setAge" type="checkbox"> Set age</label>
+                                <label>
+                                    <span>Age <output data-age for="sbds-age" hidden>30 years</output></span>
+                                    <input id="sbds-age" name="age" type="range" min="3" max="100" value="30" disabled>
+                                </label>
+                            </div>
+                            <label>Language <input name="language" maxlength="60" placeholder="e.g. English"></label>
+                            <label>Accent <input name="accent" maxlength="80" placeholder="e.g. British"></label>
+                            <label>Pitch
+                                <select name="pitch">
+                                    <option value="">Any</option>
+                                    <option value="low">Low</option>
+                                    <option value="mid-range">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </label>
+                            <label>Speaking pace
+                                <select name="pace">
+                                    <option value="">Any</option>
+                                    <option value="at a slow, unhurried pace">Slow</option>
+                                    <option value="at an even, natural pace">Natural</option>
+                                    <option value="at a quick, clear pace">Fast</option>
+                                </select>
+                            </label>
+                        </div>
+                    </fieldset>
                     <div class="sbds-fields">
                         <label>Duration (s)<input name="seconds" type="number" min="0.5" max="30" step="0.1" value="5" required></label>
-                        <label>Seed mode<select name="seedMode"><option value="random">Random</option><option value="fixed">Fixed</option></select></label>
-                        <label>Seed<input name="seed" type="number" min="0" max="4294967295" step="1" value="52" disabled required></label>
+                        <label>Generation FPS<input name="fps" type="number" min="1" max="60" step="1" value="24" required></label>
                     </div>
                     <details>
                         <summary>Generation settings</summary>
                         <div class="sbds-fields" data-generation-fields>
-                            <label>Generation FPS<input name="fps" type="number" min="1" max="60" step="1" value="24" required></label>
+                            <label>Seed mode<select name="seedMode"><option value="random">Random</option><option value="fixed">Fixed</option></select></label>
+                            <label>Seed<input name="seed" type="number" min="0" max="4294967295" step="1" value="52" disabled required></label>
                             <label>Steps<input name="steps" type="number" min="1" max="100" step="1" value="8" required></label>
                             <label>CFG<input name="cfg" type="number" min="0" max="20" step="0.1" value="1" required></label>
                         </div>
@@ -77,6 +139,7 @@ function createStudio() {
                 <h2 tabindex="-1">Model setup</h2>
                 <div data-model-fields></div>
                 <button type="button" data-action="refresh">Refresh model list</button>
+                <p data-model-status role="status">Loading ComfyUI model lists…</p>
             </section>
             <section data-latest-take>
                 <p class="sbds-label">LATEST TAKE</p>
@@ -100,7 +163,9 @@ function createStudio() {
     const expand = dialog.querySelector('[data-action="expand"]');
     const settingsButton = dialog.querySelector('[data-action="settings"]');
     const settingsPanel = dialog.querySelector("[data-settings]");
-    const status = dialog.querySelector('[role="status"]');
+    const modelStatus = settingsPanel.querySelector("[data-model-status]");
+    const footer = dialog.querySelector("footer");
+    const status = footer.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
     const elapsed = dialog.querySelector("[data-elapsed]");
     const audio = dialog.querySelector("audio");
@@ -140,16 +205,23 @@ function createStudio() {
         dialog.dataset.state = state;
     }
 
+    function setSetupStatus(message, state) {
+        modelStatus.textContent = message;
+        modelStatus.dataset.state = state;
+        setStatus(message, state);
+    }
+
     function updateSetupStatus() {
         const missing = Object.entries(selects).filter(([, select]) => !select.value);
         const fields = missing.map(([key]) => settingsLabels[key]).join(", ");
-        setStatus(fields ? `Choose ${fields} in Settings or Generation settings.` : "Ready", "idle");
+        setSetupStatus(fields ? `Choose ${fields} in Settings or Generation settings.` : "Ready", "idle");
     }
 
     async function refreshModels() {
         ready = false;
         refresh.disabled = true;
         generate.disabled = true;
+        setSetupStatus("Loading ComfyUI model lists…", "idle");
         try {
             const definitions = await request("/object_info");
             const required = new Set(Object.values(buildAudioGraph({
@@ -172,7 +244,7 @@ function createStudio() {
             ready = true;
             updateSetupStatus();
         } catch (error) {
-            setStatus(error.message, "error");
+            setSetupStatus(error.message, "error");
         } finally {
             updateControls();
         }
@@ -184,6 +256,7 @@ function createStudio() {
         settingsPanel.hidden = !showSettings;
         dialog.querySelector("[data-identity]").hidden = showSettings;
         dialog.querySelector("[data-latest-take]").hidden = showSettings;
+        footer.hidden = showSettings;
         settingsButton.textContent = showSettings ? "Back to Identity" : "Settings";
         if (showSettings) settingsPanel.querySelector("h2").focus();
     };
@@ -193,6 +266,16 @@ function createStudio() {
         expand.setAttribute("aria-pressed", String(expanded));
     };
     refresh.onclick = refreshModels;
+    const ageOutput = dialog.querySelector("[data-age]");
+    const ageInput = form.elements.age;
+    form.elements.setAge.onchange = () => {
+        const enabled = form.elements.setAge.checked;
+        ageInput.disabled = !enabled;
+        ageOutput.hidden = !enabled;
+    };
+    ageInput.oninput = () => {
+        ageOutput.value = `${ageInput.value} years`;
+    };
     form.elements.seedMode.onchange = () => {
         form.elements.seed.disabled = form.elements.seedMode.value === "random";
     };
@@ -226,6 +309,7 @@ function createStudio() {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
                 text: String(data.get("text")), negative: String(data.get("negative")),
+                voice: Object.fromEntries(data),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
             });
