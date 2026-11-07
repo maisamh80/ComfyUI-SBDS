@@ -1,10 +1,11 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { buildAudioGraph, describeSound, modelInputs, outputNode, releaseNodeType } from "./t2a.js";
+import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
 import { createResourceMonitor, resourceMeters } from "./resources.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
+const purgeTitle = "Ask ComfyUI to unload models and clear its execution cache";
 const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
     sampler: "Sampler", scheduler: "Scheduler",
@@ -62,6 +63,7 @@ function createStudio() {
             <div class="sbds-title"><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
             ${resourceMeters}
             <div class="sbds-actions">
+                <button type="button" data-action="purge" title="${purgeTitle}">Purge</button>
                 <button type="button" data-action="settings">Settings</button>
                 <button type="button" data-action="expand" aria-pressed="false">Expand</button>
                 <button type="button" data-action="close" aria-label="Close studio">✕</button>
@@ -220,6 +222,7 @@ function createStudio() {
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
     const settingsButton = dialog.querySelector('[data-action="settings"]');
+    const purgeButton = dialog.querySelector('[data-action="purge"]');
     const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), readResourceStats);
     const settingsPanel = dialog.querySelector("[data-settings]");
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
@@ -239,7 +242,8 @@ function createStudio() {
     let promptId;
     let busy = false;
     let ready = false;
-    let releaseAfterTake = false;
+    let purging = false;
+    let purgeFeedback;
 
     for (const [key, title] of Object.entries(settingsLabels)) {
         const label = document.createElement("label");
@@ -261,8 +265,9 @@ function createStudio() {
     }
 
     function updateControls() {
-        generate.disabled = busy || !ready || Object.values(selects).some((select) => !select.value);
+        generate.disabled = busy || purging || !ready || Object.values(selects).some((select) => !select.value);
         refresh.disabled = busy;
+        purgeButton.disabled = busy || purging;
     }
 
     function setStatus(message, state) {
@@ -292,11 +297,9 @@ function createStudio() {
             const required = new Set(Object.values(buildAudioGraph({
                 text: "Check node availability.", model: "model", encoder: "encoder",
                 vae: "vae", sampler: "sampler", scheduler: "scheduler", fps: 24, seconds: 1,
-                releaseAfterTake: false,
             })).map((node) => node.class_type));
             const missing = [...required].filter((type) => !definitions[type]);
             if (missing.length) throw new Error(`Missing ComfyUI nodes: ${missing.join(", ")}. See the SBDS installation guide.`);
-            releaseAfterTake = Boolean(definitions[releaseNodeType] && definitions.SaveAudio.output?.[0] === "AUDIO");
 
             const previous = { ...readSaved(settingsKey), ...Object.fromEntries(Object.entries(modelSettings()).filter(([, value]) => value)) };
             for (const [key, [node, input, preferred]] of Object.entries(modelInputs)) {
@@ -319,6 +322,28 @@ function createStudio() {
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
     dialog.addEventListener("close", () => monitor.stop());
+    purgeButton.onclick = async () => {
+        if (purgeButton.disabled) return;
+        clearTimeout(purgeFeedback);
+        purging = true;
+        updateControls();
+        purgeButton.textContent = "Purging…";
+        purgeButton.title = purgeTitle;
+        try {
+            await purgeMemory();
+            purgeButton.textContent = "Queued";
+        } catch (error) {
+            purgeButton.textContent = "Failed";
+            purgeButton.title = error.message;
+        } finally {
+            purging = false;
+            updateControls();
+            purgeFeedback = setTimeout(() => {
+                purgeButton.textContent = "Purge";
+                purgeButton.title = purgeTitle;
+            }, 3000);
+        }
+    };
     settingsButton.onclick = () => {
         const showSettings = settingsPanel.hidden;
         settingsPanel.hidden = !showSettings;
@@ -436,7 +461,6 @@ function createStudio() {
         updateElapsed();
         const timer = setInterval(updateElapsed, 250);
         setStatus("Submitting to ComfyUI…", "running");
-        let cleanupQueuedInGraph = false;
         try {
             const prompt = buildAudioGraph({
                 ...modelSettings(),
@@ -444,7 +468,6 @@ function createStudio() {
                 finalPrompt: finalPrompt(generatedPrompt(data)),
                 seconds: Number(data.get("seconds")), fps: Number(data.get("fps")),
                 steps: Number(data.get("steps")), cfg: Number(data.get("cfg")), seed,
-                releaseAfterTake,
             });
             const queued = await request("/prompt", {
                 method: "POST",
@@ -465,7 +488,6 @@ function createStudio() {
                 const failure = result.status?.messages?.find(([type]) => type === "execution_error");
                 throw new Error(failure?.[1]?.exception_message || "Generation ended without an audio file.");
             }
-            cleanupQueuedInGraph = releaseAfterTake;
             const params = new URLSearchParams({
                 filename: output.filename, subfolder: output.subfolder, type: output.type,
             });
@@ -484,13 +506,6 @@ function createStudio() {
         } finally {
             clearInterval(timer);
             updateElapsed();
-            if (promptId && !cleanupQueuedInGraph) {
-                try {
-                    await purgeMemory();
-                } catch (cleanupError) {
-                    setStatus(`${status.textContent} · ${cleanupError.message}`, dialog.dataset.state);
-                }
-            }
             busy = false;
             promptId = undefined;
             updateControls();
