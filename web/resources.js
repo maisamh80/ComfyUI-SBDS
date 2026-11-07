@@ -28,9 +28,10 @@ export function createResourceMonitor(container, readStats) {
         };
     });
     let timer;
+    let active = false;
     let fetching = false;
 
-    function render(stats) {
+    function render(stats, unavailableReason) {
         for (const { key, label, card, trend, samples, name, reading, graph } of cards) {
             const value = Number.isFinite(stats[key]) ? Math.max(0, Math.min(100, stats[key])) : null;
             const title = key === "gpu" && stats.gpuName ? stats.gpuName : label;
@@ -38,8 +39,8 @@ export function createResourceMonitor(container, readStats) {
             reading.textContent = value === null ? "—" : `${Math.round(value)}%`;
             const used = stats[`${key}UsedMiB`];
             const total = stats[`${key}TotalMiB`];
-            card.title = value === null ? `${title} unavailable` : `${title} · ${reading.textContent}`;
-            if (Number.isFinite(used) && Number.isFinite(total)) {
+            card.title = value === null ? unavailableReason || `${title} unavailable` : `${title} · ${reading.textContent}`;
+            if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {
                 card.title += ` · ${(used / 1024).toFixed(1)} / ${(total / 1024).toFixed(1)} GiB`;
             }
             if (trend) {
@@ -57,12 +58,13 @@ export function createResourceMonitor(container, readStats) {
     }
 
     async function refresh() {
-        if (fetching) return;
+        if (!active || fetching) return;
         fetching = true;
         try {
-            render(await readStats());
-        } catch {
-            render({});
+            const stats = await readStats();
+            if (active) render(stats);
+        } catch (error) {
+            if (active) render({}, error.message);
         } finally {
             fetching = false;
         }
@@ -70,10 +72,13 @@ export function createResourceMonitor(container, readStats) {
 
     return {
         start() {
+            if (active) return;
+            active = true;
             void refresh();
             timer = setInterval(refresh, 2500);
         },
         stop() {
+            active = false;
             clearInterval(timer);
         },
         refresh,
