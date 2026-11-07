@@ -37,6 +37,15 @@ async function purgeMemory() {
     if (!response.ok) throw new Error(`Memory cleanup request failed (HTTP ${response.status}).`);
 }
 
+async function readResourceStats() {
+    const response = await api.fetchApi("/sbds/resources");
+    if (response.status === 404) {
+        throw new Error("Restart ComfyUI to load SBDS resource monitoring.");
+    }
+    if (!response.ok) throw new Error(`SBDS resource monitoring returned HTTP ${response.status}.`);
+    return response.json();
+}
+
 function readSaved(key) {
     try {
         return JSON.parse(localStorage.getItem(key));
@@ -126,12 +135,13 @@ function createStudio() {
                                         <option>Korean</option>
                                         <option>Japanese</option>
                                         <option>Arabic</option>
+                                        <option>Persian</option>
                                     </optgroup>
                                     <option value="custom">Custom…</option>
                                 </select>
                             </label>
                             <label data-custom-language hidden>Custom language
-                                <input name="customLanguage" maxlength="60" placeholder="e.g. Persian" disabled required>
+                                <input name="customLanguage" maxlength="60" placeholder="e.g. Italian" disabled required>
                             </label>
                             <label>Pitch
                                 <select name="pitch">
@@ -212,7 +222,7 @@ function createStudio() {
     const expand = dialog.querySelector('[data-action="expand"]');
     const settingsButton = dialog.querySelector('[data-action="settings"]');
     const purgeButton = dialog.querySelector('[data-action="purge"]');
-    const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), () => request("/sbds/resources"));
+    const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), readResourceStats);
     const settingsPanel = dialog.querySelector("[data-settings]");
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
     const footer = dialog.querySelector("footer");
