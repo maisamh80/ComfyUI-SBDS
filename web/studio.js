@@ -5,6 +5,7 @@ import { createResourceMonitor, resourceMeters } from "./resources.js";
 import { createTakeControls, latestTakeControls } from "./audio.js";
 import { createProjectLibrary, projectsView } from "./projects.js";
 import { createUpdateControls, updatesView } from "./updates.js";
+import { createStudioTimeline, studioView } from "./studio_timeline.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
@@ -201,11 +202,7 @@ function createStudio() {
                     </div>
                 </form>
             </section>
-            <section class="sbds-empty-page" data-view="studio" hidden>
-                <p class="sbds-label">STUDIO</p>
-                <h1 data-active-project>Studio</h1>
-                <p data-active-project-description>Open a project to start working in Studio.</p>
-            </section>
+            <section class="sbds-empty-page" data-view="studio" hidden>${studioView}</section>
             <section data-view="settings" hidden>
                 <p class="sbds-label">SETTINGS</p>
                 <h2>Model setup</h2>
@@ -275,10 +272,12 @@ function createStudio() {
     let purging = false;
     let purgeFeedback;
     let activeProject;
+    const studioTimeline = createStudioTimeline(dialog.querySelector('[data-view="studio"]'), api, request, modelSettings);
     const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api, () => activeProject);
 
     function setProject(project) {
         activeProject = project;
+        if (!project) void studioTimeline.open(null);
         currentProject.hidden = !project;
         currentProject.querySelector("bdi").textContent = project?.name ?? "";
         currentProject.title = project ? `Working on ${project.name}` : "";
@@ -311,6 +310,8 @@ function createStudio() {
         main.scrollTop = 0;
         if (page === "projects") void library.refresh();
         if (page === "settings") void refreshUpdates();
+        if (page === "studio") void studioTimeline.open(activeProject);
+        else studioTimeline.stop();
     }
 
     function showNavTip(button) {
@@ -414,7 +415,10 @@ function createStudio() {
 
     dialog.querySelector('[data-action="close"]').onclick = () => dialog.close();
     dialog.addEventListener("close", () => monitor.stop());
-    dialog.addEventListener("close", () => dialog.querySelector("audio").pause());
+    dialog.addEventListener("close", () => {
+        dialog.querySelector("audio").pause();
+        studioTimeline.stop();
+    });
     purgeButton.onclick = async () => {
         if (purgeButton.disabled) return;
         clearTimeout(purgeFeedback);

@@ -356,3 +356,6 @@ def register_project_routes(server):
         return web.FileResponse(image, headers={
             "Content-Type": "image/jpeg", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store",
         })
+
+    from .studio_backend import register_studio_routes
+    register_studio_routes(routes, catalog_for, run, payload)

@@ -50,13 +50,15 @@ Open SBDS from local ComfyUI (`localhost` or `127.0.0.1`). **New Project** creat
 
 Move or copy the entire folder to take a project to another installation. **Import Project** registers the folder containing `project.json`. Importing another copy of a project points its existing card at the selected location. **Delete** removes the card from the library and keeps the folder on disk.
 
-## Development checkpoints
+## Studio
 
-1. Verify Text-to-Audio on a clean ComfyUI installation.
-2. Connect the project store to the voice library, then validate reference dialogue with one and two AVref speakers.
-3. Add the script tag compiler, timeline, and mixdown and multitrack WAV export.
+Open a project, then use **Studio** to arrange Dialogue, Music and Sound Effects tracks. Add clips at the playhead, import audio, or select a saved asset. Drag clips and their edges to edit timing, use the dots for fades, and drag the line to adjust gain. Track and clip colors, mute, solo, and project FPS are saved with the project. Timeline edits and prompts are stored in `prompts/studio.json`.
 
-Reference dialogue and the timeline are planned for later checkpoints. See the [Licon AVref documentation](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR/blob/main/README-AVref.md) for the reference pipeline's image-slot dependency.
+For generated clips, enter a prompt and use **Generate clip** or **Generate all**. For dialogue, enter the words to speak and add cues with the menu; a cue such as `[pause:3s]` inserts three seconds of silence. Use Speaker 1 and Speaker 2 to distinguish lines when using two voice references. LTX interprets the language, emotion, delivery, and vocal effect cues from the prompt.
+
+Text-to-audio uses the existing LTX node pack. Optional voice references also require [ComfyUI-LTX2.5-MSR](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR), a compatible AVref LoRA, and the LTX video VAE. Studio provides the blank images required by MSR automatically. A missing speaker slot is skipped; clips with no references use the regular audio generation path.
+
+**Export mix** saves a stereo WAV in `exports/`. **Export stems** saves a ZIP of time-aligned WAV tracks. Both respect mute and solo and include edits, gain, and fades.
 
 ## License
 
