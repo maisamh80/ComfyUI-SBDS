@@ -12,12 +12,49 @@
 .sbds .sbds-studio-fps { margin: 0; font-size: 11px; }
 .sbds .sbds-studio-fps input { width: 72px; }
 .sbds [data-studio-tools] { align-items: flex-end; }
-.sbds .sbds-timeline-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.sbds main:has([data-view="studio"]:not([hidden])) {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    overflow: hidden;
+}
+.sbds [data-view="studio"]:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: auto;
+    container-type: inline-size;
+}
+.sbds [data-studio-body]:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.sbds .sbds-inspector-scroll { flex: 1 1 0; min-height: 48px; overflow: auto; }
+.sbds .sbds-timeline-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 10px;
+    margin: 12px 0;
+}
+.sbds .sbds-timeline-transport { justify-content: center; flex-wrap: nowrap; }
+.sbds [data-studio-generate-all] { justify-self: end; }
+@container (max-width: 650px) {
+    .sbds .sbds-timeline-toolbar { grid-template-columns: minmax(0, 1fr) auto; }
+    .sbds .sbds-timeline-tracks { grid-column: 1 / -1; }
+    .sbds .sbds-timeline-transport { justify-self: center; }
+}
+@container (max-width: 350px) {
+    .sbds .sbds-timeline-toolbar { grid-template-columns: 1fr; }
+    .sbds .sbds-timeline-transport { grid-column: 1; }
+}
 .sbds .sbds-timeline-toolbar .sbds-actions { align-items: center; }
 .sbds .sbds-timeline-toolbar [data-studio-time] { font-variant-numeric: tabular-nums; color: var(--mint); min-width: 50px; }
 .sbds .sbds-timeline-toolbar label { display: flex; align-items: center; margin: 0; }
 .sbds .sbds-timeline-toolbar input[type="range"] { width: 82px; padding: 0; accent-color: var(--mint); }
-.sbds .sbds-timeline-scroll { overflow: auto; max-height: 420px; border: 1px solid var(--edge); border-radius: 9px; background: #111516; }
+.sbds .sbds-timeline-scroll { overflow: auto; flex: 0 1 auto; min-height: 46px; max-height: min(33dvh, 330px); border: 1px solid var(--edge); border-radius: 9px; background: #111516; }
 .sbds .sbds-timeline {
     --track-header: 146px;
     position: relative;
@@ -50,7 +87,21 @@
     background: repeating-linear-gradient(90deg, #252e30 0 1px, transparent 1px var(--tick));
 }
 .sbds .sbds-ruler { position: sticky; top: 0; z-index: 4; min-height: 29px; color: #c2cecb; background: #191e20; font-size: 11px; }
-.sbds .sbds-ruler .sbds-track-lane { cursor: crosshair; }
+.sbds .sbds-ruler .sbds-track-lane { cursor: crosshair; touch-action: none; user-select: none; }
+.sbds .sbds-playhead-handle {
+    position: absolute;
+    z-index: 1;
+    left: clamp(8px, var(--playhead), calc(100% - 8px));
+    bottom: 0;
+    width: 16px;
+    height: 18px;
+    transform: translateX(-50%);
+    border-radius: 4px;
+    background: var(--mint);
+    clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+    cursor: ew-resize;
+}
+.sbds .sbds-playhead-handle:focus-visible { background: #fff; }
 .sbds .sbds-time-label { position: absolute; top: 5px; padding-left: 4px; pointer-events: none; font-variant-numeric: tabular-nums; }
 .sbds .sbds-timeline-cursor { position: absolute; z-index: 2; top: 29px; bottom: 0; left: calc(var(--track-header) + var(--playhead)); width: 1px; background: var(--mint); pointer-events: none; }
 .sbds .sbds-timeline-clip {
@@ -91,5 +142,6 @@
 .sbds .sbds-clip-handle[data-drag="fadeIn"] { left: clamp(7px, var(--fade-in), calc(100% - 16px)); }
 .sbds .sbds-clip-handle[data-drag="fadeOut"] { right: clamp(7px, var(--fade-out), calc(100% - 16px)); }
 .sbds .sbds-clip-handle[data-drag="gain"] { top: var(--gain-position); left: 6px; right: 6px; height: 8px; transform: translateY(-4px); background: linear-gradient(transparent 3px, var(--clip) 3px 4px, transparent 4px); cursor: ns-resize; }
-.sbds [data-studio-progress] { margin-top: 10px; }
+.sbds [data-studio-progress] { flex: 0 0 auto; margin-top: 10px; }
+.sbds [data-studio-progress][hidden] { display: none; }
 .sbds [data-studio-elapsed] { flex: none; color: #b9c4c4; font-size: 12px; }

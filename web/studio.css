@@ -197,6 +197,8 @@
     padding: 7px 9px;
 }
 .sbds button { cursor: pointer; }
+.sbds .sbds-icon-button { display: inline-grid; place-items: center; min-width: 36px; min-height: 36px; padding: 6px; }
+.sbds .sbds-icon-button img { display: block; width: 19px; height: 19px; filter: invert(1); pointer-events: none; }
 .sbds button:disabled { opacity: .5; cursor: default; }
 .sbds textarea { width: 100%; resize: vertical; }
 .sbds .sbds-audio-type { max-width: 260px; }

@@ -78,8 +78,12 @@ function createStudio() {
             ${resourceMeters}
             <div class="sbds-actions">
                 <button type="button" data-action="purge" title="${purgeTitle}">Purge</button>
-                <button type="button" data-action="expand" aria-pressed="false">Expand</button>
-                <button type="button" data-action="close" aria-label="Close studio">✕</button>
+                <button type="button" class="sbds-icon-button" data-action="expand" aria-label="Expand" title="Expand" aria-pressed="false">
+                    <img src="${new URL("./artwork/arrows-out.svg", import.meta.url).href}" alt="">
+                </button>
+                <button type="button" class="sbds-icon-button" data-action="close" aria-label="Close studio" title="Close studio">
+                    <img src="${new URL("./artwork/x.svg", import.meta.url).href}" alt="">
+                </button>
             </div>
         </header>
         <nav class="sbds-nav" aria-label="Studio navigation">
@@ -310,8 +314,12 @@ function createStudio() {
         main.scrollTop = 0;
         if (page === "projects") void library.refresh();
         if (page === "settings") void refreshUpdates();
-        if (page === "studio") void studioTimeline.open(activeProject);
-        else studioTimeline.stop();
+        if (page === "studio") {
+            main.focus({ preventScroll: true });
+            void studioTimeline.open(activeProject);
+        } else {
+            studioTimeline.stop();
+        }
     }
 
     function showNavTip(button) {
@@ -443,7 +451,10 @@ function createStudio() {
     };
     expand.onclick = () => {
         const expanded = dialog.classList.toggle("sbds-expanded");
-        expand.textContent = expanded ? "Compact" : "Expand";
+        const label = expanded ? "Compact" : "Expand";
+        expand.querySelector("img").src = new URL(`./artwork/arrows-${expanded ? "in" : "out"}.svg`, import.meta.url).href;
+        expand.setAttribute("aria-label", label);
+        expand.title = label;
         expand.setAttribute("aria-pressed", String(expanded));
     };
     refresh.onclick = refreshModels;

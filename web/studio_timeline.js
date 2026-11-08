@@ -1,6 +1,8 @@
 import { compilePrompt, planTake, queueStudioTake, referenceOptions, referenceSetup, studioGraph } from "./studio_generation.js";
 import { createTimelinePlayback } from "./timeline_playback.js";
 
+const transportIcon = name => new URL(`./artwork/${name}.svg`, import.meta.url).href;
+
 const colors = ["mint", "blue", "lilac", "rose", "amber", "cyan", "orange", "slate"];
 const kinds = { dialogue: "Dialogue", music: "Music", sfx: "Sound Effects" };
 const timeLimit = 600;
@@ -20,77 +22,80 @@ export const studioView = `
         <div class="sbds-actions" data-studio-tools hidden>
             <label class="sbds-studio-fps">Project FPS<input type="number" data-studio-fps min="1" max="120" step="1"></label>
             <button type="button" data-studio-save>Save</button>
-            <button type="button" data-studio-mix>Export mix</button>
-            <button type="button" data-studio-stems>Export stems</button>
+            <button type="button" class="sbds-primary" data-studio-mix>Export Mix</button>
+            <button type="button" class="sbds-primary" data-studio-stems>Export Multi Track</button>
         </div>
     </div>
     <p data-studio-status class="sbds-project-status" role="status" hidden></p>
     <div data-studio-body hidden>
-        <fieldset class="sbds-clip-inspector" data-clip-inspector hidden>
-            <legend>Clip settings</legend>
-            <div class="sbds-fields">
-                <label>Clip name<input data-clip="name" maxlength="80"></label>
-                <label>Start (s)<input type="number" data-clip="start" min="0" step="any"></label>
-                <label>Duration (s)<input type="number" data-clip="duration" min="0.01" step="any"></label>
-                <label>Source offset (s)<input type="number" data-clip="offset" min="0" step="any"></label>
-                <label>Gain (dB)<input type="number" data-clip="gain" min="-60" max="12" step="0.1"></label>
-                <label>Color<select data-clip="color"><option value="">Track color</option>${colors.map(color => `<option>${color}</option>`).join("")}</select></label>
-                <label>Fade in (s)<input type="number" data-clip="fadeIn" min="0" step="any"></label>
-                <label>Fade out (s)<input type="number" data-clip="fadeOut" min="0" step="any"></label>
-                <label>Audio source<select data-clip="media"></select></label>
-            </div>
-            <label>Prompt<textarea data-clip="prompt" rows="3" maxlength="16000"></textarea></label>
-            <div data-studio-dialogue>
-                <div class="sbds-fields">
-                    <label>Speaker 1 reference<select data-reference="0"></select></label>
-                    <label>Speaker 2 reference<select data-reference="1"></select></label>
-                    <label>Insert a cue<select data-insert-cue><option value="">Choose a cue…</option>
-                        ${Object.entries(tags).map(([group, list]) => `<optgroup label="${group}">${list.map(tag => `<option value="[${tag}]">${tag.split(":")[1]}</option>`).join("")}</optgroup>`).join("")}
-                    </select></label>
-                </div>
-                <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
-                <details data-reference-setup><summary>Reference setup</summary>
-                    <div class="sbds-fields">
-                        <label>AVref LoRA<select data-reference-model="lora"></select></label>
-                        <label>LTX video VAE<select data-reference-model="vae"></select></label>
-                    </div>
-                    <p class="sbds-project-hint">Only required for reference voices. Studio supplies the blank image automatically.</p>
-                </details>
-            </div>
-            <details><summary>Generation settings</summary>
-                <div class="sbds-fields">
-                    <label>Generation FPS<input data-generation="fps" type="number" min="1" max="60"></label>
-                    <label>Steps<input data-generation="steps" type="number" min="1" max="100"></label>
-                    <label>CFG<input data-generation="cfg" type="number" min="0" max="20" step="0.1"></label>
-                    <label>Fixed seed<input data-generation="seed" type="number" min="0" max="4294967295" placeholder="Random"></label>
-                </div>
-                <label>Negative prompt<textarea data-generation="negative" rows="2" maxlength="8000"></textarea></label>
-            </details>
-            <div class="sbds-actions">
-                <button type="button" class="sbds-primary" data-studio-generate>Generate clip</button>
-                <button type="button" data-studio-delete-clip>Remove clip</button>
-            </div>
-        </fieldset>
         <div class="sbds-timeline-toolbar">
-            <div class="sbds-actions">
-                <button type="button" data-studio-play aria-label="Play timeline">Play</button>
-                <button type="button" data-studio-rewind>Start</button>
-                <span data-studio-time>0:00.0</span>
-            </div>
-            <div class="sbds-actions">
+            <div class="sbds-actions sbds-timeline-tracks">
                 <select data-new-track-type aria-label="Track type">${Object.entries(kinds).map(([key, title]) => `<option value="${key}">${title}</option>`).join("")}</select>
                 <button type="button" data-studio-track>+ Track</button>
                 <button type="button" data-studio-import>Import audio</button>
-                <button type="button" data-studio-generate-all>Generate all</button>
                 <input type="file" data-studio-file accept="audio/*,.flac,.wav,.mp3,.ogg,.opus,.m4a,.aac,.aiff" hidden>
             </div>
-            <label>Zoom <input type="range" data-studio-zoom min="18" max="144" step="6" value="48"></label>
+            <div class="sbds-actions sbds-timeline-transport">
+                <span data-studio-time>0:00.0</span>
+                <button type="button" class="sbds-icon-button" data-studio-play aria-label="Play timeline" title="Play timeline (Space)">
+                    <img src="${transportIcon("play")}" alt="">
+                </button>
+                <label>Zoom <input type="range" data-studio-zoom min="18" max="144" step="6" value="48"></label>
+            </div>
+            <button type="button" class="sbds-primary" data-studio-generate-all>Generate All</button>
         </div>
         <div class="sbds-timeline-scroll" data-timeline-scroll>
             <div class="sbds-timeline" data-timeline></div>
         </div>
         <div class="sbds-progress" data-studio-progress hidden>
             <progress max="1" value="0" aria-label="Studio generation progress"></progress><span data-studio-elapsed></span>
+        </div>
+        <div class="sbds-inspector-scroll" data-inspector-scroll hidden>
+            <fieldset class="sbds-clip-inspector" data-clip-inspector hidden>
+                <legend>Clip settings</legend>
+                <div class="sbds-fields">
+                    <label>Clip name<input data-clip="name" maxlength="80"></label>
+                    <label>Start (s)<input type="number" data-clip="start" min="0" step="any"></label>
+                    <label>Duration (s)<input type="number" data-clip="duration" min="0.01" step="any"></label>
+                    <label>Source offset (s)<input type="number" data-clip="offset" min="0" step="any"></label>
+                    <label>Gain (dB)<input type="number" data-clip="gain" min="-60" max="12" step="0.1"></label>
+                    <label>Color<select data-clip="color"><option value="">Track color</option>${colors.map(color => `<option>${color}</option>`).join("")}</select></label>
+                    <label>Fade in (s)<input type="number" data-clip="fadeIn" min="0" step="any"></label>
+                    <label>Fade out (s)<input type="number" data-clip="fadeOut" min="0" step="any"></label>
+                    <label>Audio source<select data-clip="media"></select></label>
+                </div>
+                <label>Prompt<textarea data-clip="prompt" rows="3" maxlength="16000"></textarea></label>
+                <div data-studio-dialogue>
+                    <div class="sbds-fields">
+                        <label>Speaker 1 reference<select data-reference="0"></select></label>
+                        <label>Speaker 2 reference<select data-reference="1"></select></label>
+                        <label>Insert a cue<select data-insert-cue><option value="">Choose a cue…</option>
+                            ${Object.entries(tags).map(([group, list]) => `<optgroup label="${group}">${list.map(tag => `<option value="[${tag}]">${tag.split(":")[1]}</option>`).join("")}</optgroup>`).join("")}
+                        </select></label>
+                    </div>
+                    <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
+                    <details data-reference-setup><summary>Reference setup</summary>
+                        <div class="sbds-fields">
+                            <label>AVref LoRA<select data-reference-model="lora"></select></label>
+                            <label>LTX video VAE<select data-reference-model="vae"></select></label>
+                        </div>
+                        <p class="sbds-project-hint">Only required for reference voices. Studio supplies the blank image automatically.</p>
+                    </details>
+                </div>
+                <details><summary>Generation settings</summary>
+                    <div class="sbds-fields">
+                        <label>Generation FPS<input data-generation="fps" type="number" min="1" max="60"></label>
+                        <label>Steps<input data-generation="steps" type="number" min="1" max="100"></label>
+                        <label>CFG<input data-generation="cfg" type="number" min="0" max="20" step="0.1"></label>
+                        <label>Fixed seed<input data-generation="seed" type="number" min="0" max="4294967295" placeholder="Random"></label>
+                    </div>
+                    <label>Negative prompt<textarea data-generation="negative" rows="2" maxlength="8000"></textarea></label>
+                </details>
+                <div class="sbds-actions">
+                    <button type="button" class="sbds-primary" data-studio-generate>Generate clip</button>
+                    <button type="button" data-studio-delete-clip>Remove clip</button>
+                </div>
+            </fieldset>
         </div>
     </div>
 `;
@@ -121,6 +126,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
     const status = get("[data-studio-status]");
     const timeline = get("[data-timeline]");
     const inspector = get("[data-clip-inspector]");
+    const inspectorScroll = get("[data-inspector-scroll]");
     const zoom = get("[data-studio-zoom]");
     const play = get("[data-studio-play]");
     const progress = get("[data-studio-progress]");
@@ -129,6 +135,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
     let active;
     let selected;
     let playhead = 0;
+    let playheadHandle;
     let running = false;
     let playbackTicket = 0;
     let jobId;
@@ -136,11 +143,15 @@ export function createStudioTimeline(section, api, request, modelSettings) {
     let referenceConfig = {};
     try { referenceConfig = JSON.parse(localStorage.getItem(settingsKey)) || {}; } catch {}
 
-    const playback = createTimelinePlayback(setPlayhead, () => {
-        running = false;
-        play.textContent = "Play";
-        play.setAttribute("aria-label", "Play timeline");
-    });
+    function showPlaybackState(playing) {
+        running = playing;
+        const action = playing ? "Pause" : "Play";
+        play.querySelector("img").src = transportIcon(action.toLowerCase());
+        play.setAttribute("aria-label", `${action} timeline`);
+        play.title = `${action} timeline (Space)`;
+    }
+
+    const playback = createTimelinePlayback(setPlayhead, () => showPlaybackState(false));
 
     function message(text = "", error = false) {
         status.textContent = text;
@@ -182,6 +193,10 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         playhead = clamp(value, 0, timeLimit);
         get("[data-studio-time]").textContent = timecode(playhead);
         timeline.style.setProperty("--playhead", `${playhead * Number(zoom.value)}px`);
+        if (playheadHandle) {
+            playheadHandle.setAttribute("aria-valuenow", String(Number(playhead.toFixed(3))));
+            playheadHandle.setAttribute("aria-valuetext", timecode(playhead));
+        }
     }
 
     function flush(session) {
@@ -266,9 +281,10 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         return Math.round(value * fps) / fps;
     }
 
-    function select(track, clip) {
+    function select(track, clip, focusClip = false) {
         selected = { track: track.id, clip: clip?.id };
         render();
+        if (focusClip) timeline.querySelector('[data-selected="true"]')?.focus({ preventScroll: true });
     }
 
     function addClip(track, media) {
@@ -331,7 +347,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
             node.removeEventListener("pointercancel", finish);
             if (event.type === "pointercancel") Object.assign(clip, original);
             else if (JSON.stringify(clip) !== JSON.stringify(original)) changed();
-            select(track, clip);
+            select(track, clip, true);
         };
         node.addEventListener("pointermove", move);
         node.addEventListener("pointerup", finish);
@@ -362,7 +378,53 @@ export function createStudioTimeline(section, api, request, modelSettings) {
             stopPlayback();
             setPlayhead(snap((event.clientX - event.currentTarget.getBoundingClientRect().left) / scale));
         };
-        marks.onclick = seek;
+        playheadHandle = element("span", "sbds-playhead-handle");
+        playheadHandle.tabIndex = 0;
+        playheadHandle.setAttribute("role", "slider");
+        playheadHandle.setAttribute("aria-label", "Timeline playhead");
+        playheadHandle.setAttribute("aria-valuemin", "0");
+        playheadHandle.setAttribute("aria-valuemax", String(length));
+        playheadHandle.title = "Drag to scrub";
+        marks.append(playheadHandle);
+        let scrubPointer;
+        let resumeAfterScrub;
+        let gripOffset = 0;
+        const scrub = (event) => {
+            const offset = event.clientX - marks.getBoundingClientRect().left - gripOffset;
+            setPlayhead(clamp(snap(offset / scale), 0, length));
+        };
+        marks.onpointerdown = event => {
+            if (event.button !== 0 || scrubPointer !== undefined) return;
+            event.preventDefault();
+            resumeAfterScrub = running;
+            stopPlayback();
+            scrubPointer = event.pointerId;
+            gripOffset = event.target === playheadHandle
+                ? event.clientX - marks.getBoundingClientRect().left - playhead * scale
+                : 0;
+            marks.setPointerCapture(event.pointerId);
+            playheadHandle.focus({ preventScroll: true });
+            if (event.target !== playheadHandle) scrub(event);
+        };
+        marks.onpointermove = event => {
+            if (event.pointerId === scrubPointer) scrub(event);
+        };
+        marks.onpointerup = marks.onlostpointercapture = event => {
+            if (event.pointerId !== scrubPointer) return;
+            scrubPointer = undefined;
+            if (resumeAfterScrub && playhead < endTime()) void play.onclick();
+        };
+        playheadHandle.onkeydown = event => {
+            const step = 1 / (active.project.fps || 24);
+            const positions = { ArrowLeft: playhead - step, ArrowRight: playhead + step, Home: 0, End: length };
+            if (!(event.key in positions)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const resume = running;
+            stopPlayback();
+            setPlayhead(clamp(snap(positions[event.key]), 0, length));
+            if (resume && playhead < endTime()) void play.onclick();
+        };
         ruler.append(marks);
         timeline.append(ruler);
         for (const track of tracks) {
@@ -425,7 +487,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                 }
                 drawClip(node, clip);
                 node.onpointerdown = event => drag(event, track, clip, node);
-                node.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(track, clip); } };
+                node.onkeydown = event => { if (event.key === "Enter") { event.preventDefault(); select(track, clip, true); } };
                 lane.append(node);
             }
             row.append(controls, lane);
@@ -441,7 +503,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
 
     function renderInspector() {
         const { track, clip } = findSelected();
-        inspector.hidden = !clip;
+        inspector.hidden = inspectorScroll.hidden = !clip;
         inspector.disabled = busy;
         if (!clip) return;
         get("[data-studio-dialogue]").hidden = track.kind !== "dialogue";
@@ -524,7 +586,6 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         select(track);
     };
     zoom.oninput = render;
-    get("[data-studio-rewind]").onclick = () => { stopPlayback(); setPlayhead(0); };
     play.onclick = async () => {
         if (running) { stopPlayback(); return; }
         const session = active;
@@ -535,14 +596,23 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         if (playhead >= end) setPlayhead(0);
         try {
             const started = playback.play(clips, playhead, end, id => api.apiURL(route(session, `/media/${encodeURIComponent(id)}`)));
-            running = true;
-            play.textContent = "Pause";
-            play.setAttribute("aria-label", "Pause timeline");
+            showPlaybackState(true);
             await started;
         } catch (error) {
             if (ticket === playbackTicket) { stopPlayback(); message(error.message, true); }
         }
     };
+
+    const dialog = section.closest("dialog");
+    dialog?.addEventListener("keydown", event => {
+        if (event.code !== "Space" || event.defaultPrevented || section.hidden || body.hidden
+            || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const target = event.target;
+        if (target.closest("dialog") !== dialog || target.closest("input, textarea, select, button, a, summary, [contenteditable]")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) void play.onclick();
+    });
 
     get("[data-studio-import]").onclick = () => file.click();
     file.onchange = async () => {
