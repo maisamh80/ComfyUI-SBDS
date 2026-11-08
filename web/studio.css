@@ -274,6 +274,16 @@
 .sbds .sbds-audio-status[data-error="true"] { color: #f3bfab; }
 .sbds [hidden] { display: none; }
 .sbds .sbds-progress { display: flex; align-items: center; gap: 12px; min-height: 18px; margin-top: 4px; }
+.sbds .sbds-current-project {
+    min-width: 0;
+    max-width: min(45%, 280px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #b9c4c4;
+    font-size: 12px;
+}
+.sbds .sbds-current-project bdi { color: var(--mint); }
 .sbds [data-elapsed] { flex: none; color: #b9c4c4; font-size: 12px; font-variant-numeric: tabular-nums; }
 .sbds progress {
     appearance: none;
