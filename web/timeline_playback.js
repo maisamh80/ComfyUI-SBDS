@@ -69,7 +69,9 @@ export function createTimelinePlayback(onTime, onStop) {
         });
         function tick() {
             if (current !== ticket) return;
-            const position = from + Math.max(0, context.currentTime - started);
+            const outputTime = context.getOutputTimestamp?.().contextTime
+                || context.currentTime - (context.outputLatency || 0) - (context.baseLatency || 0);
+            const position = from + Math.max(0, outputTime - started);
             onTime(Math.min(end, position));
             if (position >= end) stop();
             else animation = requestAnimationFrame(tick);

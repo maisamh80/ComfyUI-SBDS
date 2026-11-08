@@ -1,59 +1,86 @@
 import { buildAudioGraph, outputNode } from "./t2a.js";
 
-const annotation = /\[(lang|emotion|style|prosody|sfx):([^\]\r\n]+)\]/gi;
-const pauseTag = /\[pause:(\d+(?:\.\d+)?)s\]/gi;
+const annotation = /\bSpeaker ([12]):|\[(lang|emotion|style|prosody|sfx|pause):([^\]\r\n]+)\]/gi;
+const sentences = new Intl.Segmenter(undefined, { granularity: "sentence" });
+const styles = new Map([
+    ["sung", "sing this line"],
+    ["whispered", "whisper this line"],
+    ["shouted", "shout this line"],
+]);
 const tagPhrases = {
-    lang: value => `speaks in ${value}`,
-    emotion: value => `sounds ${value}`,
-    style: value => `uses a ${value} delivery`,
-    prosody: value => `speaks ${value}`,
-    sfx: value => `makes a ${value} sound`,
+    lang: value => "use " + value,
+    emotion: value => "sound " + value,
+    style: value => styles.get(value.toLowerCase()) || "use a " + value + " delivery",
+    prosody: value => "deliver the line " + value,
+    sfx: value => "include a " + value + " sound during this line",
 };
 
-export function compilePrompt(kind, text, referenceCount) {
+export function compilePrompt(kind, text, referenceCount, duration, fps) {
+    text = text.trim();
+    if (!text) throw new Error("Enter a prompt for this clip.");
     if (kind !== "dialogue") {
-        return `${kind === "music" ? "Generate a music cue." : "Generate a sound effect."} ${text.trim()}`;
+        const instruction = kind === "music" ? "Generate a music cue." : "Generate a sound effect.";
+        return instruction + " " + text;
     }
-    const cues = [];
+
+    const events = [];
+    let speaker = "Speaker";
+    let directions = [];
     let index = 0;
-    for (const tag of text.matchAll(annotation)) {
-        const words = text.slice(index, tag.index).trim();
-        if (words) cues.push(words);
-        cues.push(`(From here the speaker ${tagPhrases[tag[1].toLowerCase()](tag[2].trim())}.)`);
-        index = tag.index + tag[0].length;
+    let pauseCount = 0;
+    let pauseFrames = 0;
+    let hasDialogue = false;
+
+    function addSpeech(value) {
+        const words = value.trim();
+        if (!words) return;
+        const lines = directions.length ? sentences.segment(words) : [{ segment: words }];
+        for (const { segment } of lines) {
+            const line = segment.trim();
+            if (!line) continue;
+            const performance = directions.some(([cue]) => cue === "style") ? [] : ["speak this line normally"];
+            for (const [cue, value] of directions) performance.push(tagPhrases[cue](value));
+            events.push(speaker + " [" + performance.join(", ") + "]: " + JSON.stringify(line));
+            directions = [];
+        }
+        hasDialogue = true;
     }
-    if (text.slice(index).trim()) cues.push(text.slice(index).trim());
+
+    for (const tag of text.matchAll(annotation)) {
+        addSpeech(text.slice(index, tag.index));
+        index = tag.index + tag[0].length;
+        if (tag[1]) {
+            speaker = "Speaker " + tag[1];
+            continue;
+        }
+        const cue = tag[2].toLowerCase();
+        const value = tag[3].trim();
+        if (cue !== "pause") {
+            directions.push([cue, value]);
+            continue;
+        }
+        const seconds = Number(/^(\d+(?:\.\d+)?)s$/i.exec(value)?.[1]);
+        if (!(seconds >= 0.01 && seconds <= 60)) throw new Error("Use a pause like [pause:3s], between 0.01 and 60 seconds.");
+        const frames = Math.max(1, Math.round(seconds * fps));
+        const timedSeconds = Number((frames / fps).toFixed(6));
+        pauseCount++;
+        pauseFrames += frames;
+        events.push("[Silence for " + timedSeconds + (timedSeconds === 1 ? " second" : " seconds")
+            + " (" + frames + (frames === 1 ? " frame" : " frames") + " at " + fps + " FPS).]");
+    }
+    addSpeech(text.slice(index));
+    if (!hasDialogue) throw new Error("Enter the words to speak.");
+    if (pauseCount > 15) throw new Error("Use at most 15 pause cues in a clip.");
+    if (pauseFrames && Math.round(duration * fps) - pauseFrames < 8) {
+        throw new Error("This clip is too short for its dialogue and pauses.");
+    }
+
     const identity = referenceCount === 2
         ? "Speaker 1 uses the first reference voice. Speaker 2 uses the second reference voice."
         : referenceCount === 1 ? "The speaker uses the reference voice." : "";
-    return ["Generate the following spoken dialogue. Speak the dialogue, and use the directions in parentheses for delivery.", identity, cues.join(" ")]
-        .filter(Boolean).join(" ");
-}
-
-export function planTake(kind, clip, fps) {
-    const prompt = clip.prompt.trim();
-    if (!prompt) throw new Error("Enter a prompt for this clip.");
-    if (kind !== "dialogue") return [{ text: prompt, duration: clip.duration }];
-    const parts = [];
-    let index = 0;
-    for (const match of prompt.matchAll(pauseTag)) {
-        if (prompt.slice(index, match.index).trim()) parts.push({ text: prompt.slice(index, match.index).trim() });
-        const duration = Number(match[1]);
-        if (duration < 0.01 || duration > 60) throw new Error("Each pause must be between 0.01 and 60 seconds.");
-        parts.push({ silence: true, duration });
-        index = match.index + match[0].length;
-    }
-    if (prompt.slice(index).trim()) parts.push({ text: prompt.slice(index).trim() });
-    const spoken = parts.filter(part => !part.silence);
-    if (!spoken.length) throw new Error("Enter some dialogue as well as pauses.");
-    if (parts.length > 31) throw new Error("Use at most 15 pause cues in a clip.");
-    const silence = parts.reduce((sum, part) => sum + (part.silence ? part.duration : 0), 0);
-    const minimum = 8 / fps;
-    const extra = clip.duration - silence - spoken.length * minimum;
-    if (extra < -0.0001) throw new Error("This clip is too short for its dialogue and pauses.");
-    const weight = spoken.reduce((sum, part) => sum + part.text.length, 0);
-    for (const part of spoken) part.duration = minimum + Math.max(0, extra) * part.text.length / weight;
-    return parts;
+    const instructions = "Perform these events in order. Say only the quoted words. "
+        + "Directions before a quotation apply only to that quotation. Standalone silence events go between the neighboring lines.";
+    return [instructions, identity, ...events.map((event, i) => (i + 1) + ". " + event)].filter(Boolean).join("\n");
 }
 
 const referenceNodes = ["ComfyUILTX25MSRICLoRALoader", "ComfyUILTX25MSRMultiReferenceGuide",

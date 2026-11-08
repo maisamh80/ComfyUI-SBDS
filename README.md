@@ -54,7 +54,7 @@ Move or copy the entire folder to take a project to another installation. **Impo
 
 Open a project, then use **Studio** to arrange Dialogue, Music and Sound Effects tracks. Add clips at the playhead, import audio, or select a saved asset. Drag clips and their edges to edit timing, use the dots for fades, and drag the line to adjust gain. Track and clip colors, mute, solo, and project FPS are saved with the project. Timeline edits and prompts are stored in `prompts/studio.json`.
 
-For generated clips, enter a prompt and use **Generate clip** or **Generate all**. For dialogue, enter the words to speak and add cues with the menu; a cue such as `[pause:3s]` inserts three seconds of silence. Use Speaker 1 and Speaker 2 to distinguish lines when using two voice references. LTX interprets the language, emotion, delivery, and vocal effect cues from the prompt.
+For generated clips, enter a prompt and use **Generate clip** or **Generate all**. For dialogue, put language, emotion, delivery, and vocal effect cues before the words they apply to. Use Speaker 1 and Speaker 2 to distinguish lines when using two voice references. A cue such as `[pause:3s]` requests silence at that point in the same take. Studio converts the request to project frames, and the actual pause length depends on LTX. Clip timing snaps to project frames, with durations shown as seconds and frames.
 
 Text-to-audio uses the existing LTX node pack. Optional voice references also require [ComfyUI-LTX2.5-MSR](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR), a compatible AVref LoRA, and the LTX video VAE. Studio provides the blank images required by MSR automatically. A missing speaker slot is skipped; clips with no references use the regular audio generation path.
 

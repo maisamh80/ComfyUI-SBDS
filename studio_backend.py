@@ -1,6 +1,7 @@
 import mimetypes
 from io import BytesIO
 from itertools import chain
+from math import floor
 from pathlib import Path
 import re
 from shutil import copyfileobj
@@ -55,12 +56,15 @@ def string(value, length):
     return value
 
 
-def validate_timeline(data):
+def validate_timeline(data, fps):
     tracks = data.get("tracks")
     if data.get("version") != 1 or not isinstance(tracks, list) or len(tracks) > 24:
         raise ValueError("This timeline format is invalid or has more than 24 tracks.")
     result = []
     ids = set()
+
+    def frames(seconds):
+        return floor(seconds * fps + 0.5)
 
     def identifier(value):
         value = string(value, 80)
@@ -86,18 +90,22 @@ def validate_timeline(data):
             if not isinstance(clip, dict):
                 raise ValueError("A timeline clip is invalid.")
             start = field(clip.get("start"), 0, MAX_TIME)
-            duration = field(clip.get("duration"), 0.01, MAX_TIME)
+            duration = field(clip.get("duration"), 1 / 120, MAX_TIME)
             if start + duration > MAX_TIME + 0.000001:
                 raise ValueError("The timeline can be up to 20 minutes long.")
+            start_frame = min(frames(start), MAX_TIME * fps - 1)
+            duration_frames = max(1, min(frames(duration), MAX_TIME * fps - start_frame))
             refs = clip.get("refs", [])
             if not isinstance(refs, list) or len(refs) > 2:
                 raise ValueError("Choose up to two voice references.")
             clean["clips"].append({
                 "id": identifier(clip.get("id")), "name": string(clip.get("name"), 80),
-                "start": start, "duration": duration, "offset": field(clip.get("offset", 0), 0, MAX_TIME),
+                "start": start_frame / fps,
+                "duration": duration_frames / fps,
+                "offset": frames(field(clip.get("offset", 0), 0, MAX_TIME)) / fps,
                 "gain": field(clip.get("gain", 0), -60, 12),
-                "fadeIn": field(clip.get("fadeIn", 0), 0, duration),
-                "fadeOut": field(clip.get("fadeOut", 0), 0, duration),
+                "fadeIn": min(frames(field(clip.get("fadeIn", 0), 0, duration)), duration_frames) / fps,
+                "fadeOut": min(frames(field(clip.get("fadeOut", 0), 0, duration)), duration_frames) / fps,
                 "color": clip["color"] if clip.get("color") in COLORS else "",
                 "media": string(clip.get("media", ""), 80),
                 "prompt": string(clip.get("prompt", ""), 16000),
@@ -183,17 +191,19 @@ def media_catalog(root):
 
 
 def open_session(index, project_id):
-    root = project_root(index, project_id)
+    project = open_project(index, project_id)
+    root = Path(project["path"])
     path = timeline_path(root)
     data = read_catalog(path)
-    timeline = validate_timeline(data) if data else {"version": 1, "tracks": []}
+    timeline = validate_timeline(data, project["fps"]) if data else {"version": 1, "tracks": []}
     return {"timeline": timeline, "media": list(media_catalog(root)[1].values())}
 
 
 def save_session(index, project_id, data):
-    clean = validate_timeline(data)
     with LOCK:
-        write_json(timeline_path(project_root(index, project_id)), clean)
+        project = open_project(index, project_id)
+        clean = validate_timeline(data, project["fps"])
+        write_json(timeline_path(Path(project["path"])), clean)
 
 
 def save_fps(index, project_id, data):
@@ -279,7 +289,7 @@ def save_take(index, project_id, data):
     for part in parts:
         if not isinstance(part, dict):
             raise ValueError("This take has an invalid section.")
-        count = round(field(part.get("duration"), 0.01, 60) * RATE)
+        count = round(field(part.get("duration"), 1 / 120, 120) * RATE)
         total += count
         if total > RATE * 120:
             raise ValueError("A generated take can be up to two minutes long.")
@@ -369,8 +379,9 @@ def write_mix(path, samples, format_name, quality):
 def render_export(index, project_id, data, stems, format_name="wav", quality="16"):
     if format_name not in EXPORTS or quality not in EXPORTS[format_name][1]:
         raise ValueError("Choose a supported audio format and quality.")
-    root = project_root(index, project_id)
-    timeline = validate_timeline(data)
+    project = open_project(index, project_id)
+    root = Path(project["path"])
+    timeline = validate_timeline(data, project["fps"])
     assets, media = media_catalog(root)
     tracks = timeline["tracks"]
     any_solo = any(track["solo"] for track in tracks)
