@@ -237,7 +237,7 @@ function createStudio() {
                 <span data-elapsed hidden></span>
             </div>
         </footer>
-        <dialog class="sbds-prompt-editor" aria-labelledby="sbds-prompt-title">
+        <dialog class="sbds-prompt-editor" data-identity-prompt aria-labelledby="sbds-prompt-title">
             <form>
                 <h2 id="sbds-prompt-title">Final Prompt</h2>
                 <p>This is the positive prompt SBDS will send to LTX. Save edits to use them with these sound settings.</p>
@@ -273,7 +273,7 @@ function createStudio() {
     const elapsed = dialog.querySelector("[data-elapsed]");
     const takes = dialog.querySelector("[data-take]");
     const promptButton = form.querySelector('[data-action="prompt"]');
-    const promptEditor = dialog.querySelector(".sbds-prompt-editor");
+    const promptEditor = dialog.querySelector("[data-identity-prompt]");
     const promptText = promptEditor.querySelector("textarea");
     const selects = {};
     let promptOverride = readSaved(promptKey);
