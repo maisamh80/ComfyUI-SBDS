@@ -95,3 +95,15 @@ The workspace header shows ComfyUI server CPU and RAM usage, plus NVIDIA GPU and
 Developed by **Maisam Hosaini**. [StoryEco.xyz](https://storyeco.xyz/)
 
 Powered by **Lightricks LTX**. SBDS is released under the [MIT License](LICENSE). Upstream nodes and model weights have their own terms.
+
+---
+
+## Made by this workflow
+
+I created the voices in this video using this ComfyUI workflow. **— Maisam Hosaini**
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=xAV3ux7SqSI"><img src="https://i.ytimg.com/vi/xAV3ux7SqSI/hqdefault.jpg" alt="Watch Maisam Hosaini's voice demo on YouTube" width="560"></a>
+</p>
+
+<p align="center"><a href="https://www.youtube.com/watch?v=xAV3ux7SqSI">Watch the voice demo on YouTube</a></p>
