@@ -11,6 +11,7 @@ import { referenceOptions } from "./studio_generation.js";
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
 const purgeTitle = "Ask ComfyUI to unload models and clear its execution cache";
+const poweredBy = "Powered by Lightricks LTX";
 const referenceSettingsKey = "sbds-studio-reference-settings";
 const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
@@ -229,12 +230,11 @@ function createStudio() {
                 ${latestTakeControls}
             </section>
             <div class="sbds-settings-credits" data-view="settings" role="group" aria-label="Credits" hidden>
-                <span>Powered by Lightricks LTX</span>
+                <span>${poweredBy}</span>
                 <div class="sbds-credits-links">
-                    <span>Developed by Meysam H.</span><span aria-hidden="true">|</span>
-                    <span>Storycode.com</span><span aria-hidden="true">|</span>
-                    <a href="https://storycode.xyz" target="_blank" rel="noopener noreferrer">Storycode.xyz</a><span aria-hidden="true">|</span>
-                    <a href="mailto:maisamh80@gmail.com">maisamh80@gmail.com</a>
+                    <span>Developed by Maisam Hosaini</span><span aria-hidden="true">|</span>
+                    <a href="https://storyeco.xyz/" target="_blank" rel="noopener noreferrer">StoryEco.xyz</a><span aria-hidden="true">|</span>
+                    <span>maisamh80@gmail.com</span>
                 </div>
             </div>
         </main>
@@ -668,6 +668,21 @@ app.registerExtension({
         };
         if (typeof node.addDOMWidget !== "function") {
             node.addWidget("button", "Open Studio", null, openStudio);
+            node.addCustomWidget?.({
+                name: "LTX credit",
+                type: "sbds-credit",
+                options: { serialize: false },
+                computeSize: () => [160, 20],
+                draw(ctx, _node, width, y, height) {
+                    ctx.save();
+                    ctx.fillStyle = "#b9c4c4";
+                    ctx.font = "11px system-ui";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(poweredBy, width / 2, y + height / 2);
+                    ctx.restore();
+                },
+            });
             return;
         }
 
@@ -676,12 +691,18 @@ app.registerExtension({
         launcher.className = "sbds-node-launcher";
         launcher.innerHTML = `<img src="${artwork("node-logo")}" alt="" draggable="false"><span>Open Studio</span>`;
         launcher.onclick = openStudio;
-        node.addDOMWidget("Open Studio", "button", launcher, {
+        const panel = document.createElement("div");
+        panel.className = "sbds-node-panel";
+        const credit = document.createElement("span");
+        credit.className = "sbds-node-credit";
+        credit.textContent = poweredBy;
+        panel.append(launcher, credit);
+        node.addDOMWidget("Open Studio", "button", panel, {
             serialize: false,
             hideOnZoom: false,
-            getMinHeight: () => 130,
+            getMinHeight: () => 148,
             getHeight: () => "100%",
         });
-        node.setSize([Math.max(node.size[0], 220), Math.max(node.size[1], 160)]);
+        node.setSize([Math.max(node.size[0], 220), Math.max(node.size[1], 178)]);
     },
 });
