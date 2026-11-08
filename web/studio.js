@@ -297,7 +297,13 @@ function createStudio() {
             localStorage.setItem(referenceSettingsKey, JSON.stringify(referenceSettings()));
         });
     }
-    const studioTimeline = createStudioTimeline(dialog.querySelector('[data-view="studio"]'), api, request, modelSettings, referenceSettings);
+    const generationOptions = () => ({
+        sampler: [...selects.sampler.options].map(option => option.value).filter(Boolean),
+        scheduler: [...selects.scheduler.options].map(option => option.value).filter(Boolean),
+    });
+    const studioTimeline = createStudioTimeline(
+        dialog.querySelector('[data-view="studio"]'), api, request, modelSettings, referenceSettings, generationOptions,
+    );
     const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api, () => activeProject);
 
     function setProject(project) {

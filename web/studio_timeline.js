@@ -20,7 +20,6 @@ export const studioView = `
             <p data-active-project-description>Open a project to start working in Studio.</p></div>
         <div class="sbds-actions" data-studio-tools hidden>
             <label class="sbds-studio-fps">Project FPS<input type="number" data-studio-fps min="1" max="120" step="1"></label>
-            <button type="button" data-studio-save>Save</button>
             <button type="button" class="sbds-primary" data-studio-mix>Export Mix</button>
             <button type="button" class="sbds-primary" data-studio-stems>Export Multi Track</button>
         </div>
@@ -60,31 +59,35 @@ export const studioView = `
                     <label>Gain (dB)<input type="number" data-clip="gain" min="-60" max="12" step="0.1"></label>
                     <label>Fade in (s)<input type="number" data-clip="fadeIn" min="0" step="any"></label>
                     <label>Fade out (s)<input type="number" data-clip="fadeOut" min="0" step="any"></label>
-                    <label>Audio source<select data-clip="media"></select></label>
                 </div>
-                <label>Prompt<textarea data-clip="prompt" rows="3" maxlength="16000"></textarea></label>
-                <div data-studio-dialogue>
-                    <div class="sbds-fields">
-                        <label>Speaker 1 reference<select data-reference="0"></select></label>
-                        <label>Speaker 2 reference<select data-reference="1"></select></label>
-                        <label>Insert a cue<select data-insert-cue><option value="">Choose a cue…</option>
-                            ${Object.entries(tags).map(([group, list]) => `<optgroup label="${group}">${list.map(tag => `<option value="[${tag}]">${tag.split(":")[1]}</option>`).join("")}</optgroup>`).join("")}
-                        </select></label>
+                <div data-generation-editor hidden>
+                    <label>Prompt<textarea data-clip="prompt" rows="3" maxlength="16000"></textarea></label>
+                    <div data-studio-dialogue>
+                        <div class="sbds-fields">
+                            <label>Speaker 1 reference<select data-reference="0"></select></label>
+                            <label>Speaker 2 reference<select data-reference="1"></select></label>
+                            <label>Insert a cue<select data-insert-cue><option value="">Choose a cue…</option>
+                                ${Object.entries(tags).map(([group, list]) => `<optgroup label="${group}">${list.map(tag => `<option value="[${tag}]">${tag.split(":")[1]}</option>`).join("")}</optgroup>`).join("")}
+                            </select></label>
+                        </div>
+                        <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
                     </div>
-                    <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
-                    </div>
-                <details><summary>Generation settings</summary>
-                    <div class="sbds-fields">
-                        <label>Generation FPS<input data-generation="fps" type="number" min="1" max="60"></label>
-                        <label>Steps<input data-generation="steps" type="number" min="1" max="100"></label>
-                        <label>CFG<input data-generation="cfg" type="number" min="0" max="20" step="0.1"></label>
-                        <label>Fixed seed<input data-generation="seed" type="number" min="0" max="4294967295" placeholder="Random"></label>
-                    </div>
-                    <label>Negative prompt<textarea data-generation="negative" rows="2" maxlength="8000"></textarea></label>
-                </details>
+                    <details><summary>Generation settings</summary>
+                        <div class="sbds-fields">
+                            <label>Seed mode<select data-generation="seedMode"><option value="random">Random</option><option value="fixed">Fixed</option></select></label>
+                            <label>Seed<input data-generation="seed" type="number" min="0" max="4294967295" placeholder="Random"></label>
+                            <label>Steps<input data-generation="steps" type="number" min="1" max="100"></label>
+                            <label>CFG<input data-generation="cfg" type="number" min="0" max="20" step="0.1"></label>
+                            <label>Sampler<select data-generation="sampler"></select></label>
+                            <label>Scheduler<select data-generation="scheduler"></select></label>
+                        </div>
+                        <label>Negative prompt<textarea data-generation="negative" rows="2" maxlength="8000"></textarea></label>
+                    </details>
+                </div>
                 <div class="sbds-actions">
                     <button type="button" class="sbds-primary" data-studio-generate>Generate clip</button>
-                <button type="button" data-studio-final-prompt>Final Prompt</button>
+                    <button type="button" data-studio-final-prompt>Final Prompt</button>
+                    <button type="button" class="sbds-primary" data-studio-regenerate hidden>Generate Again</button>
                     <button type="button" data-studio-delete-clip>Remove clip</button>
                 </div>
             </fieldset>
@@ -115,13 +118,13 @@ function element(tag, className, text) {
     return node;
 }
 
-function choiceList(select, values, empty, value) {
+function choiceList(select, values, empty, value, missingLabel = "Missing audio") {
     select.replaceChildren(new Option(empty, ""), ...values.map(([id, name]) => new Option(name, id)));
     select.value = value ?? "";
-    if (value && !select.value) select.add(new Option("Missing audio", value, false, true));
+    if (value && !select.value) select.add(new Option(`${missingLabel}: ${value}`, value, false, true));
 }
 
-export function createStudioTimeline(section, api, request, modelSettings, referenceSettings) {
+export function createStudioTimeline(section, api, request, modelSettings, referenceSettings, generationOptions) {
     const get = selector => section.querySelector(selector);
     const body = get("[data-studio-body]");
     const tools = get("[data-studio-tools]");
@@ -138,6 +141,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     const file = get("[data-studio-file]");
     let active;
     let selected;
+    let regenerateClip;
     let playhead = 0;
     let playheadHandle;
     let running = false;
@@ -231,7 +235,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             id: uuid(), name: media?.name || `${kinds[track.kind]} clip`, media: media?.id || "",
             start, duration: Math.min(media?.duration || 5, timeLimit - start), offset: 0,
             gain: 0, fadeIn: 0, fadeOut: 0, color: "", prompt: "", refs: [],
-            generation: { fps: Math.min(active.project.fps, 60), steps: 8, cfg: 1, seed: "", negative: "" },
+            generation: { seedMode: "random", seed: "", steps: 8, cfg: 1, sampler: "", scheduler: "", negative: "" },
         };
     }
 
@@ -248,7 +252,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         }
         if (active?.timeline) void flush(active).catch(() => {});
         playback.clear();
-        selected = undefined;
+        selected = regenerateClip = undefined;
         setPlayhead(0);
         active = project ? { project, save: Promise.resolve(), dirty: false } : undefined;
         body.hidden = tools.hidden = true;
@@ -274,6 +278,14 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         return { track, clip: track?.clips.find(item => item.id === selected?.clip) };
     }
 
+    function clipStatus(clip) {
+        if (!clip.media) return "pending";
+        const item = active.media.find(entry => entry.id === clip.media);
+        if (item?.origin) return item.origin;
+        // Older projects did not store media provenance.
+        return item?.library || !clip.prompt.trim() ? "imported" : "generated";
+    }
+
     function endTime() {
         return Math.max(0, ...active.timeline.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)));
     }
@@ -284,6 +296,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     }
 
     function select(track, clip, focusClip = false) {
+        if (regenerateClip !== clip?.id) regenerateClip = undefined;
         selected = { track: track.id, clip: clip?.id };
         render();
         if (focusClip) timeline.querySelector('[data-selected="true"]')?.focus({ preventScroll: true });
@@ -533,7 +546,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         timeline.append(cursor);
         setPlayhead(playhead);
         renderInspector();
-        for (const selector of ["[data-studio-track]", "[data-studio-import]", "[data-studio-generate-all]", "[data-studio-mix]", "[data-studio-stems]", "[data-studio-save]"]) get(selector).disabled = busy;
+        for (const selector of ["[data-studio-track]", "[data-studio-import]", "[data-studio-generate-all]", "[data-studio-mix]", "[data-studio-stems]"]) get(selector).disabled = busy;
     }
 
     function renderInspector() {
@@ -541,12 +554,25 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         inspector.hidden = inspectorScroll.hidden = !clip;
         inspector.disabled = busy;
         if (!clip) return;
+        const state = clipStatus(clip);
+        const editGeneration = state === "pending" || (state === "generated" && regenerateClip === clip.id);
+        get("[data-generation-editor]").hidden = !editGeneration;
+        get("[data-studio-generate]").hidden = !editGeneration;
+        get("[data-studio-final-prompt]").hidden = !editGeneration;
+        get("[data-studio-regenerate]").hidden = state !== "generated" || editGeneration;
+        for (const input of inspector.querySelectorAll("[data-clip]")) input.value = clip[input.dataset.clip];
+        if (!editGeneration) return;
         get("[data-studio-dialogue]").hidden = track.kind !== "dialogue";
-        for (const input of inspector.querySelectorAll("[data-clip]")) {
-            if (input.dataset.clip !== "media") input.value = clip[input.dataset.clip];
+        const options = generationOptions();
+        for (const input of inspector.querySelectorAll("[data-generation]")) {
+            const key = input.dataset.generation;
+            if (options[key]) {
+                choiceList(input, options[key].map(value => [value, value]), "Use Model Setup", clip.generation[key], "Unavailable");
+            } else {
+                input.value = clip.generation[key];
+            }
         }
-        for (const input of inspector.querySelectorAll("[data-generation]")) input.value = clip.generation[input.dataset.generation];
-        choiceList(get('[data-clip="media"]'), active.media.map(item => [item.id, item.name]), "No audio", clip.media);
+        get('[data-generation="seed"]').disabled = clip.generation.seedMode !== "fixed";
         for (const input of inspector.querySelectorAll("[data-reference]")) {
             choiceList(input, active.media.filter(item => item.library).map(item => [item.id, item.name]), "No reference", clip.refs[input.dataset.reference]);
         }
@@ -560,10 +586,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             const key = input.dataset.clip;
             if (input.type === "number" && (!input.value || !input.validity.valid)) { renderInspector(); return; }
             clip[key] = input.type === "number" ? Number(input.value) : input.value;
-            if (key === "media") {
-                const item = active.media.find(item => item.id === clip.media);
-                if (item) { clip.duration = item.duration; clip.offset = 0; }
-            }
             constrain(clip);
         } else if (input.dataset.reference !== undefined) {
             clip.refs[Number(input.dataset.reference)] = input.value;
@@ -572,6 +594,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             if (!input.validity.valid) { renderInspector(); return; }
             const key = input.dataset.generation;
             clip.generation[key] = input.type === "number" && key !== "seed" ? Number(input.value) || (key === "cfg" ? 0 : 1) : input.value;
+            if (key === "seedMode" && input.value === "fixed") clip.generation.seed ||= "0";
         } else {
             return;
         }
@@ -598,6 +621,14 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         active.timeline.tracks.push(track);
         changed();
         select(track);
+    };
+    get("[data-studio-regenerate]").onclick = () => {
+        const { clip } = findSelected();
+        if (clip && clipStatus(clip) === "generated") {
+            regenerateClip = clip.id;
+            renderInspector();
+            get('[data-clip="prompt"]').focus();
+        }
     };
     get("[data-studio-delete-clip]").onclick = () => {
         const { track, clip } = findSelected();
@@ -657,14 +688,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         finally { busy = false; render(); }
     };
 
-    get("[data-studio-save]").onclick = async () => {
-        const session = active;
-        try {
-            await flush(session);
-            if (active === session) message("Timeline saved.");
-        } catch {}
-    };
-
     get("[data-studio-fps]").onchange = async (event) => {
         const session = active;
         const input = event.currentTarget;
@@ -707,9 +730,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         if (jobId && detail.prompt_id === jobId && detail.max) progressBar.value = detail.value / detail.max;
     });
 
-    function preparePrompts(track, clip) {
+    function preparePrompts(track, clip, fps) {
         const refs = track.kind === "dialogue" ? [...new Set(clip.refs.filter(Boolean))] : [];
-        const parts = planTake(track.kind, clip, clip.generation.fps).map(part => part.silence ? part : {
+        const parts = planTake(track.kind, clip, fps).map(part => part.silence ? part : {
             ...part, prompt: compilePrompt(track.kind, part.text, refs.length),
         });
         return { refs, parts };
@@ -720,7 +743,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         if (!clip) return;
         const preview = finalPrompt.querySelector("textarea");
         try {
-            const { parts } = preparePrompts(track, clip);
+            const { parts } = preparePrompts(track, clip, active.project.fps);
             const positive = parts.length === 1 ? parts[0].prompt : parts.map((part, index) =>
                 part.silence ? `[Silence: ${part.duration}s]` : `Part ${index + 1}\n${part.prompt}`
             ).join("\n\n");
@@ -733,7 +756,8 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     };
 
     async function generate(jobs) {
-        if (busy || !jobs.length) { if (!busy) message("Add a prompt to a clip first."); return; }
+        if (busy) return;
+        if (!jobs.length) { message("No ungenerated clips with prompts."); return; }
         const session = active;
         const settings = modelSettings();
         busy = true; render(); progress.hidden = false;
@@ -742,9 +766,10 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         try {
             for (const [index, { track, clip }] of jobs.entries()) {
                 message(`Generating ${index + 1}/${jobs.length} · ${clip.name}`);
-                const { fps, steps, cfg, seed, negative } = clip.generation;
+                const { fps } = session.project;
+                const { steps, cfg, seedMode, seed, negative, sampler, scheduler } = clip.generation;
                 if (clip.duration > 120) throw new Error("Split generated clips longer than two minutes.");
-                const { parts, refs } = preparePrompts(track, clip);
+                const { parts, refs } = preparePrompts(track, clip, fps);
                 const referenceModels = refs.length ? await referenceSetup(request, referenceSettings()) : null;
                 if (referenceModels && referenceModels.vae === settings.vae) {
                     throw new Error("Choose the LTX Video VAE separately from the Audio VAE in Model setup.");
@@ -760,9 +785,11 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                     progressBar.value = 0;
                     const graph = studioGraph({
                         ...settings, text: part.text, negative,
+                        sampler: sampler || settings.sampler,
+                        scheduler: scheduler || settings.scheduler,
                         finalPrompt: part.prompt,
                         seconds: Math.max(8 / fps, Math.ceil(part.duration * fps / 8) * 8 / fps),
-                        fps, steps, cfg, seed: seed === "" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed),
+                        fps, steps, cfg, seed: seedMode === "random" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed),
                     }, references, referenceModels);
                     const filename = await queueStudioTake(request, api, graph, id => { jobId = id; });
                     rendered.push({ filename, duration: part.duration });
@@ -770,6 +797,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 const media = await service(session, "/take", { name: clip.name, parts: rendered });
                 clip.media = media.id;
                 clip.offset = 0;
+                if (regenerateClip === clip.id) regenerateClip = undefined;
                 session.media.push(media);
                 changed(session);
                 await flush(session);
@@ -783,9 +811,13 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             render();
         }
     }
-    get("[data-studio-generate]").onclick = () => { const item = findSelected(); if (item.clip) void generate([item]); };
+    get("[data-studio-generate]").onclick = () => {
+        const item = findSelected();
+        if (!item.clip || get("[data-studio-generate]").hidden) return;
+        void generate([item]);
+    };
     get("[data-studio-generate-all]").onclick = () => void generate(active.timeline.tracks.flatMap(track =>
-        track.clips.filter(clip => clip.prompt.trim()).map(clip => ({ track, clip }))));
+        track.clips.filter(clip => !clip.media && clip.prompt.trim()).map(clip => ({ track, clip }))));
 
     return { open, stop: stopPlayback };
 }

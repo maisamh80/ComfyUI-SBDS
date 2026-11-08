@@ -115,11 +115,16 @@ def validate_generation(value):
         if not isinstance(seed, str) or not seed.isascii() or not seed.isdecimal() or len(seed) > 10:
             raise ValueError("Choose a valid fixed seed.")
         seed = str(int(field(int(seed), 0, 2 ** 32 - 1)))
+    seed_mode = value.get("seedMode", "fixed" if seed else "random")
+    if seed_mode not in ("random", "fixed"):
+        raise ValueError("Choose Random or Fixed seed mode.")
     return {
-        "fps": int(field(value.get("fps", 24), 1, 60)),
+        "seedMode": seed_mode,
         "steps": int(field(value.get("steps", 8), 1, 100)),
         "cfg": field(value.get("cfg", 1), 0, 20),
-        "seed": seed,
+        "seed": seed or ("0" if seed_mode == "fixed" else ""),
+        "sampler": string(value.get("sampler", ""), 120),
+        "scheduler": string(value.get("scheduler", ""), 120),
         "negative": string(value.get("negative", ""), 8000),
     }
 
@@ -158,10 +163,15 @@ def asset_path(assets, filename):
     return path
 
 
+def studio_asset_path(assets, entry):
+    folder = child_folder(assets.parent, "cache") if entry.get("origin") == "generated" else assets
+    return asset_path(folder, entry["file"])
+
+
 def media_catalog(root):
     assets = child_folder(root, "assets")
-    _, imported = studio_media(assets)
-    result = dict(imported)
+    _, studio_entries = studio_media(assets)
+    result = dict(studio_entries)
     for entry in read_catalog(record_file(assets, "library.json")).values():
         try:
             source = asset_path(assets, entry["file"])
@@ -197,12 +207,13 @@ def save_fps(index, project_id, data):
     return {"fps": fps}
 
 
-def add_media(root, name, suffix, duration, write):
+def add_media(root, name, suffix, duration, write, *, origin):
     assets = child_folder(root, "assets")
     media_id = uuid4().hex
     filename = f"studio-{media_id}{suffix}"
-    path = assets / filename
-    entry = {"id": media_id, "file": filename, "name": name, "duration": duration, "library": False}
+    folder = child_folder(root, "cache") if origin == "generated" else assets
+    path = folder / filename
+    entry = {"id": media_id, "file": filename, "name": name, "duration": duration, "library": False, "origin": origin}
     with LOCK:
         index, library = studio_media(assets)
         try:
@@ -220,7 +231,10 @@ def import_media(index, project_id, filename, data):
     if suffix not in AUDIO_SUFFIXES or not data or len(data) > MAX_MEDIA:
         raise ValueError("Choose a supported audio file under 64 MB.")
     duration = audio_duration(BytesIO(data))
-    return add_media(project_root(index, project_id), Path(filename).stem[:80], suffix, duration, lambda path: path.write_bytes(data))
+    return add_media(
+        project_root(index, project_id), Path(filename).stem[:80], suffix, duration,
+        lambda path: path.write_bytes(data), origin="imported",
+    )
 
 
 def read_audio(path, skip, limit):
@@ -278,7 +292,7 @@ def save_take(index, project_id, data):
         chunks.append(samples)
     return add_media(
         project_root(index, project_id), name, ".wav", total / RATE,
-        lambda path: write_wav(path, np.concatenate(chunks)),
+        lambda path: write_wav(path, np.concatenate(chunks)), origin="generated",
     )
 
 
@@ -316,9 +330,9 @@ def mix_track(track, assets, media, frames, destination):
             continue
         item = media.get(clip["media"])
         if not item:
-            raise ValueError(f'Missing audio for “{clip["name"]}”. Relink or remove that clip before exporting.')
+            raise ValueError(f'Missing audio for “{clip["name"]}”. Remove that clip before exporting.')
         length = round(clip["duration"] * RATE)
-        audio = read_audio(asset_path(assets, item["file"]), round(clip["offset"] * RATE), length)
+        audio = read_audio(studio_asset_path(assets, item), round(clip["offset"] * RATE), length)
         start = round(clip["start"] * RATE)
         audio = audio[:max(0, frames - start)].copy()
         audio *= 10 ** (clip["gain"] / 20)
@@ -397,7 +411,7 @@ def register_studio_routes(routes, catalog_for, run, payload):
             assets, items = media_catalog(project_root(index, project_id))
             if media_id not in items:
                 raise FileNotFoundError
-            return asset_path(assets, items[media_id]["file"])
+            return studio_asset_path(assets, items[media_id])
 
         path = await run(locate, catalog_for(request), request.match_info["id"], request.match_info["media"])
         return web.FileResponse(path, headers={"Content-Type": mimetypes.guess_type(path)[0] or "application/octet-stream",
