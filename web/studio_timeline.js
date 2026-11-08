@@ -1,4 +1,4 @@
-import { compilePrompt, queueStudioTake, referenceSetup, studioGraph } from "./studio_generation.js";
+import { compilePrompt, queueStudioTake, referenceSetup, stripLegacyTiming, studioGraph } from "./studio_generation.js";
 import { createTimelinePlayback } from "./timeline_playback.js";
 import { audioExportFields, bindAudioExportFields } from "./audio.js";
 import { bindCueEditor, cueEditorView } from "./cue_editor.js";
@@ -72,7 +72,7 @@ export const studioView = `
                             <label>Speaker 1 reference<select data-reference="0"></select></label>
                             <label>Speaker 2 reference<select data-reference="1"></select></label>
                         </div>
-                        <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] asks LTX for a timed pause.</p>
+                        <p class="sbds-project-hint">Match each speaker label to its voice reference. For precise pauses, leave a gap between clips on the timeline.</p>
                     </div>
                     <details><summary>Generation settings</summary>
                         <div class="sbds-fields">
@@ -86,7 +86,7 @@ export const studioView = `
                         <label>Negative prompt<textarea data-generation="negative" rows="2" maxlength="8000"></textarea></label>
                     </details>
                 </div>
-                <div class="sbds-actions">
+                <div class="sbds-actions sbds-clip-actions">
                     <button type="button" class="sbds-primary" data-studio-generate>Generate clip</button>
                     <button type="button" data-studio-final-prompt>Final Prompt</button>
                     <button type="button" class="sbds-primary" data-studio-regenerate hidden>Generate Again</button>
@@ -178,7 +178,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     const preview = get("[data-reference-preview]");
     let active;
     let selected;
-    let regenerateClip;
     let playhead = 0;
     let scale = 48;
     let rulerLength = 24;
@@ -339,7 +338,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         playback.clear();
         clearVideo();
         preview.hidden = true;
-        selected = regenerateClip = undefined;
+        selected = undefined;
         setPlayhead(0);
         active = project ? { project, save: Promise.resolve(), dirty: false } : undefined;
         body.hidden = tools.hidden = true;
@@ -351,7 +350,10 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             if (active !== session) return;
             session.timeline = data.timeline;
             for (const track of session.timeline.tracks) {
-                for (const clip of track.clips) constrain(clip, session.project.fps);
+                for (const clip of track.clips) {
+                    constrain(clip, session.project.fps);
+                    if (track.kind === "dialogue") clip.prompt = stripLegacyTiming(clip.prompt);
+                }
             }
             session.media = data.media;
             session.video = data.video;
@@ -433,7 +435,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     }
 
     function select(track, clip, focusClip = false) {
-        if (regenerateClip !== clip?.id) regenerateClip = undefined;
         selected = track ? { track: track.id, clip: clip?.id } : undefined;
         render();
         if (focusClip) timeline.querySelector('[data-selected="true"]')?.focus({ preventScroll: true });
@@ -727,7 +728,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         inspector.disabled = busy;
         if (!clip) { cueEditor.close(); return; }
         const state = clipStatus(clip);
-        const editGeneration = state === "pending" || (state === "generated" && regenerateClip === clip.id);
+        const editGeneration = state === "pending" || (state === "generated" && clip.retake);
         get("[data-generation-editor]").hidden = !editGeneration;
         get("[data-studio-generate]").hidden = !editGeneration;
         get("[data-studio-final-prompt]").hidden = !editGeneration;
@@ -808,7 +809,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     get("[data-studio-regenerate]").onclick = () => {
         const { clip } = findSelected();
         if (clip && clipStatus(clip) === "generated") {
-            regenerateClip = clip.id;
             clip.retake = true;
             changed();
             render();
@@ -990,9 +990,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         if (jobId && detail.prompt_id === jobId && detail.max) progressBar.value = detail.value / detail.max;
     });
 
-    function preparePrompt(track, clip, fps) {
-        const refs = track.kind === "dialogue" ? [...new Set(clip.refs.filter(Boolean))] : [];
-        const positive = compilePrompt(track.kind, clip.prompt, refs.length, clip.duration, fps);
+    function preparePrompt(track, clip) {
+        const refs = track.kind === "dialogue" ? clip.refs : [];
+        const positive = compilePrompt(track.kind, clip.prompt, refs);
         return { refs, positive };
     }
 
@@ -1001,7 +1001,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         if (!clip) return;
         const preview = finalPrompt.querySelector("textarea");
         try {
-            const { positive } = preparePrompt(track, clip, active.project.fps);
+            const { positive } = preparePrompt(track, clip);
             const negative = clip.generation.negative;
             preview.value = negative ? `${positive}\n\nNegative prompt\n${negative}` : positive;
         } catch (error) {
@@ -1024,15 +1024,16 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 const { fps } = session.project;
                 const { steps, cfg, seedMode, seed, negative, sampler, scheduler } = clip.generation;
                 if (clip.duration > 120) throw new Error("Split generated clips longer than two minutes.");
-                const { positive, refs } = preparePrompt(track, clip, fps);
-                const referenceModels = refs.length ? await referenceSetup(request, referenceSettings()) : null;
+                const { positive, refs } = preparePrompt(track, clip);
+                const referenceModels = refs.some(Boolean) ? await referenceSetup(request, referenceSettings()) : null;
                 if (referenceModels && referenceModels.vae === settings.vae) {
                     throw new Error("Choose the LTX Video VAE separately from the Audio VAE in Model setup.");
                 }
                 const references = [];
-                for (const id of refs) {
+                for (const [slot, id] of refs.entries()) {
+                    if (!id) continue;
                     const { input } = await service(session, `/reference/${encodeURIComponent(id)}`, {});
-                    references.push(input);
+                    references[slot] = input;
                 }
                 progressBar.value = 0;
                 const usedSeed = seedMode === "random" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed);
@@ -1052,7 +1053,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 clip.offset = 0;
                 clip.retake = false;
                 clip.generation.lastSeed = usedSeed;
-                if (regenerateClip === clip.id) regenerateClip = undefined;
                 session.media.push(media);
                 changed(session);
                 await flush(session);

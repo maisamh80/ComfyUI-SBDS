@@ -1,86 +1,67 @@
 import { buildAudioGraph, outputNode } from "./t2a.js";
 
-const annotation = /\bSpeaker ([12]):|\[(lang|emotion|style|prosody|sfx|pause):([^\]\r\n]+)\]/gi;
+const annotation = /\bSpeaker ([12]):|\[(lang|emotion|style|prosody|sfx):([^\]\r\n]+)\]/gi;
 const sentences = new Intl.Segmenter(undefined, { granularity: "sentence" });
-const styles = new Map([
-    ["sung", "sing this line"],
-    ["whispered", "whisper this line"],
-    ["shouted", "shout this line"],
+const deliveryVerbs = new Map([
+    ["sung", "sings"],
+    ["whispered", "whispers"],
+    ["shouted", "shouts"],
 ]);
-const tagPhrases = {
-    lang: value => "use " + value,
-    emotion: value => "sound " + value,
-    style: value => styles.get(value.toLowerCase()) || "use a " + value + " delivery",
-    prosody: value => "deliver the line " + value,
-    sfx: value => "include a " + value + " sound during this line",
-};
 
-export function compilePrompt(kind, text, referenceCount, duration, fps) {
-    text = text.trim();
+export function stripLegacyTiming(text) {
+    return text.replace(/\[pause:[^\]\r\n]*\]/gi, " ");
+}
+
+export function compilePrompt(kind, text, references = []) {
+    text = (kind === "dialogue" ? stripLegacyTiming(text) : text).trim();
     if (!text) throw new Error("Enter a prompt for this clip.");
     if (kind !== "dialogue") {
         const instruction = kind === "music" ? "Generate a music cue." : "Generate a sound effect.";
         return instruction + " " + text;
     }
 
-    const events = [];
-    let speaker = "Speaker";
-    let directions = [];
+    const lines = [];
+    let speaker = 0;
+    let directions = new Map();
     let index = 0;
-    let pauseCount = 0;
-    let pauseFrames = 0;
-    let hasDialogue = false;
 
     function addSpeech(value) {
         const words = value.trim();
         if (!words) return;
-        const lines = directions.length ? sentences.segment(words) : [{ segment: words }];
-        for (const { segment } of lines) {
+        const segments = directions.size ? sentences.segment(words) : [{ segment: words }];
+        for (const { segment } of segments) {
             const line = segment.trim();
             if (!line) continue;
-            const performance = directions.some(([cue]) => cue === "style") ? [] : ["speak this line normally"];
-            for (const [cue, value] of directions) performance.push(tagPhrases[cue](value));
-            events.push(speaker + " [" + performance.join(", ") + "]: " + JSON.stringify(line));
-            directions = [];
+            const label = ["The speaker", "The first speaker", "The second speaker"][speaker];
+            const slot = speaker || references.findIndex(Boolean) + 1;
+            const identity = references[slot - 1] ? ", using the voice in Audio " + slot + "," : "";
+            const style = directions.get("style");
+            const verb = deliveryVerbs.get(style?.toLowerCase()) || "says";
+            const language = directions.get("lang");
+            const emotion = directions.get("emotion");
+            const pace = directions.get("prosody");
+            const sound = directions.get("sfx");
+            const delivery = [
+                language && "in " + language,
+                emotion && (/^[aeiou]/i.test(emotion) ? "in an " : "in a ") + emotion + " tone",
+                pace,
+                style && verb === "says" && "with a " + style + " delivery",
+                sound && "with a " + sound,
+            ].filter(Boolean);
+            lines.push([label + identity, verb, ...delivery].join(" ") + ", " + JSON.stringify(line));
+            directions = new Map();
         }
-        hasDialogue = true;
     }
 
     for (const tag of text.matchAll(annotation)) {
         addSpeech(text.slice(index, tag.index));
         index = tag.index + tag[0].length;
-        if (tag[1]) {
-            speaker = "Speaker " + tag[1];
-            continue;
-        }
-        const cue = tag[2].toLowerCase();
-        const value = tag[3].trim();
-        if (cue !== "pause") {
-            directions.push([cue, value]);
-            continue;
-        }
-        const seconds = Number(/^(\d+(?:\.\d+)?)s$/i.exec(value)?.[1]);
-        if (!(seconds >= 0.01 && seconds <= 60)) throw new Error("Use a pause like [pause:3s], between 0.01 and 60 seconds.");
-        const frames = Math.max(1, Math.round(seconds * fps));
-        const timedSeconds = Number((frames / fps).toFixed(6));
-        pauseCount++;
-        pauseFrames += frames;
-        events.push("[Silence for " + timedSeconds + (timedSeconds === 1 ? " second" : " seconds")
-            + " (" + frames + (frames === 1 ? " frame" : " frames") + " at " + fps + " FPS).]");
+        if (tag[1]) speaker = Number(tag[1]);
+        else directions.set(tag[2].toLowerCase(), tag[3].trim());
     }
     addSpeech(text.slice(index));
-    if (!hasDialogue) throw new Error("Enter the words to speak.");
-    if (pauseCount > 15) throw new Error("Use at most 15 pause cues in a clip.");
-    if (pauseFrames && Math.round(duration * fps) - pauseFrames < 8) {
-        throw new Error("This clip is too short for its dialogue and pauses.");
-    }
-
-    const identity = referenceCount === 2
-        ? "Speaker 1 uses the first reference voice. Speaker 2 uses the second reference voice."
-        : referenceCount === 1 ? "The speaker uses the reference voice." : "";
-    const instructions = "Perform these events in order. Say only the quoted words. "
-        + "Directions before a quotation apply only to that quotation. Standalone silence events go between the neighboring lines.";
-    return [instructions, identity, ...events.map((event, i) => (i + 1) + ". " + event)].filter(Boolean).join("\n");
+    if (!lines.length) throw new Error("Enter the words to speak.");
+    return lines.join("\n");
 }
 
 const referenceNodes = ["ComfyUILTX25MSRICLoRALoader", "ComfyUILTX25MSRMultiReferenceGuide",
@@ -114,7 +95,8 @@ export function referenceOptions(definitions) {
 
 export function studioGraph(settings, references = [], referenceModels) {
     const graph = buildAudioGraph(settings);
-    if (!references.length) return graph;
+    const slotCount = references.findLastIndex(Boolean) + 1;
+    if (!slotCount) return graph;
     const node = (class_type, inputs) => ({ class_type, inputs });
     const link = (id, index = 0) => [String(id), index];
     graph["20"] = node(referenceNodes[0], { model: link(1), lora_name: referenceModels.lora, strength_model: 1 });
@@ -127,14 +109,17 @@ export function studioGraph(settings, references = [], referenceModels) {
         positive: link(7), negative: link(7, 1), vae: link(21), latent: link(9), msr_parameters: link(20, 1),
         strength: 1, reference_frames: "33", use_tiled_encode: false, tile_size: 256, tile_overlap: 64,
     };
-    references.forEach((audio, index) => {
+    // MSR requires contiguous image slots even when an audio slot is empty.
+    for (const [index, audio] of references.slice(0, slotCount).entries()) {
         const n = 24 + index * 3;
-        graph[n] = node("LoadAudio", { audio });
-        graph[n + 1] = node("LTXVAudioVAEEncode", { audio: link(n), audio_vae: link(4) });
         graph[n + 2] = node("EmptyImage", { width: 512, height: 512, batch_size: 1, color: 0xffffff });
         guide[`pic${index + 1}`] = link(n + 2);
-        guide[`audio_ref${index + 1}`] = link(n + 1);
-    });
+        if (audio) {
+            graph[n] = node("LoadAudio", { audio });
+            graph[n + 1] = node("LTXVAudioVAEEncode", { audio: link(n), audio_vae: link(4) });
+            guide[`audio_ref${index + 1}`] = link(n + 1);
+        }
+    }
     graph["22"] = node(referenceNodes[1], guide);
     graph["10"].inputs.video_latent = link(22, 2);
     graph["11"].inputs.positive = link(22);

@@ -66,6 +66,28 @@
 .sbds footer { grid-area: footer; border-top: 1px solid var(--edge); }
 .sbds main { grid-area: main; display: grid; align-content: start; gap: 16px; padding: 24px var(--page-inset); overflow: auto; }
 .sbds main:focus { outline: none; }
+.sbds main:has(.sbds-settings-credits:not([hidden])) { display: flex; flex-direction: column; }
+.sbds .sbds-settings-credits:not([hidden]) {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px 16px;
+    margin-top: auto;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--edge);
+    color: #b9c4c4;
+    font-size: 11px;
+}
+.sbds .sbds-credits-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 6px;
+    margin-left: auto;
+    overflow-wrap: anywhere;
+}
 .sbds .sbds-nav {
     grid-area: nav;
     display: flex;

@@ -228,6 +228,15 @@ function createStudio() {
                 <p data-take>No audio generated yet.</p>
                 ${latestTakeControls}
             </section>
+            <div class="sbds-settings-credits" data-view="settings" role="group" aria-label="Credits" hidden>
+                <span>Powered by Lightricks LTX</span>
+                <div class="sbds-credits-links">
+                    <span>Developed by Meysam H.</span><span aria-hidden="true">|</span>
+                    <span>Storycode.com</span><span aria-hidden="true">|</span>
+                    <a href="https://storycode.xyz" target="_blank" rel="noopener noreferrer">Storycode.xyz</a><span aria-hidden="true">|</span>
+                    <a href="mailto:maisamh80@gmail.com">maisamh80@gmail.com</a>
+                </div>
+            </div>
         </main>
         <footer data-view="identity" hidden>
             <span role="status">Loading ComfyUI model lists…</span>

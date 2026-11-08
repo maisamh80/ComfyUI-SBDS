@@ -4,11 +4,10 @@ const categories = [
     ["Emotion", "rose", ["emotion:happy", "emotion:sad", "emotion:angry", "emotion:scared", "emotion:surprised", "emotion:calm"]],
     ["Delivery", "blue", ["style:whispered", "style:shouted", "style:sung", "prosody:slowly", "prosody:quickly"]],
     ["Vocal Effects", "lilac", ["sfx:laugh", "sfx:cough", "sfx:sigh", "sfx:sneeze", "sfx:cry"]],
-    ["Timing", "cyan", ["pause:0.5s", "pause:1s", "pause:3s"]],
 ];
 
-const cuePattern = /\bSpeaker [12]:|\[(lang|emotion|style|prosody|sfx|pause):[^\]\r\n]+\]/gi;
-const cueColors = { lang: "mint", emotion: "rose", style: "blue", prosody: "blue", sfx: "lilac", pause: "cyan" };
+const cuePattern = /\bSpeaker [12]:|\[(lang|emotion|style|prosody|sfx):[^\]\r\n]+\]/gi;
+const cueColors = { lang: "mint", emotion: "rose", style: "blue", prosody: "blue", sfx: "lilac" };
 
 export const cueEditorView = `
     <div class="sbds-prompt-heading">
