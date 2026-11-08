@@ -574,16 +574,16 @@ app.registerExtension({
             studio();
         };
         if (typeof node.addDOMWidget !== "function") {
-            node.addWidget("button", "Open SBDS", null, openStudio);
+            node.addWidget("button", "Open Studio", null, openStudio);
             return;
         }
 
         const launcher = document.createElement("button");
         launcher.type = "button";
         launcher.className = "sbds-node-launcher";
-        launcher.innerHTML = `<img src="${artwork("node-logo")}" alt="" draggable="false"><span>Open SBDS</span>`;
+        launcher.innerHTML = `<img src="${artwork("node-logo")}" alt="" draggable="false"><span>Open Studio</span>`;
         launcher.onclick = openStudio;
-        node.addDOMWidget("Open SBDS", "button", launcher, {
+        node.addDOMWidget("Open Studio", "button", launcher, {
             serialize: false,
             hideOnZoom: false,
             getMinHeight: () => 130,
