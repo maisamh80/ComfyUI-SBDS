@@ -30,7 +30,10 @@ export const projectsView = `
             <h2 data-project-dialog-title></h2>
             <label data-create-field>Project name<input name="name" required maxlength="80"></label>
             <label data-create-field>Short description<textarea name="description" rows="2" maxlength="300"></textarea></label>
-            <label data-create-field>Project frame rate (FPS)<input name="fps" type="number" value="24" min="1" max="120" step="1" required></label>
+            <label data-create-field>
+                <span>Project frame rate (FPS) <span class="sbds-project-hint">(You can change this later in Studio.)</span></span>
+                <input name="fps" type="number" value="24" min="1" max="120" step="1" required>
+            </label>
             <label><span data-path-label>Project location</span>
                 <span class="sbds-project-path">
                     <input name="path" required placeholder="Absolute folder path">
@@ -83,8 +86,8 @@ async function projectRequest(api, path = "", method = "GET", payload) {
     const response = await api.fetchApi(root + path, options);
     if (!response.ok) {
         const message = await response.text();
-        if (response.status === 404 && message.trim() === "404: Not Found") {
-            throw new Error("Restart ComfyUI to load the Projects feature.");
+        if (response.status === 405 || (response.status === 404 && (!message.trim() || message.trim() === "404: Not Found"))) {
+            throw new Error("Restart the ComfyUI server, then refresh the browser to load Projects.");
         }
         throw new Error(message || "The project request failed.");
     }

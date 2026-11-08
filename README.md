@@ -1,5 +1,7 @@
 # Sound Band Design Studio (SBDS)
 
+<img src="web/artwork/node-logo.webp" alt="SBDS cassette logo" width="240">
+
 An LTX-powered audio production studio inside ComfyUI. This first checkpoint provides the canvas launcher, model setup, and an audio-only generation panel. You can queue a take, follow sampling progress, listen, and download the result.
 
 ## Install on a fresh ComfyUI
@@ -8,7 +10,7 @@ An LTX-powered audio production studio inside ComfyUI. This first checkpoint pro
 2. In its `custom_nodes` directory, install SBDS and the upstream LTX node pack:
 
    ```sh
-   git clone https://github.com/maisamh80/sound-band-design-studio.git
+   git clone https://github.com/maisamh80/ComfyUI-SBDS.git
    git clone https://github.com/Lightricks/ComfyUI-LTXVideo.git
    ```
 
