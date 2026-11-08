@@ -38,13 +38,19 @@ Click **Purge** in the header to request that ComfyUI unload its models and clea
 
 For a voice, enter a description or a line in quotation marks and choose its traits under **Voice design**. **Final Prompt** shows the text that will be sent to LTX. Saved edits apply to that generated prompt in this browser. Use **Reset to generated** and save to clear the edit. Choose **Custom** in the language menu to enter a language by name.
 
+## Projects
+
+Open SBDS from local ComfyUI (`localhost` or `127.0.0.1`). **New Project** creates a named folder in the location you select. It contains `project.json` and four folders: `assets/`, `cache/`, `prompts/`, and `exports/`. The project thumbnail is stored in `cache/`. ComfyUI keeps the list of project locations in its user data.
+
+Move or copy the entire folder to take a project to another installation. **Import Project** registers the folder containing `project.json`. Importing another copy of a project points its existing card at the selected location. **Delete** removes the card from the library and keeps the folder on disk.
+
 ## Development checkpoints
 
 1. Verify Text-to-Audio on a clean ComfyUI installation.
-2. Add the project store and voice library, then validate reference dialogue with one and two AVref speakers.
+2. Connect the project store to the voice library, then validate reference dialogue with one and two AVref speakers.
 3. Add the script tag compiler, timeline, and mixdown and multitrack WAV export.
 
-Reference dialogue, project persistence, and the timeline are planned for later checkpoints. See the [Licon AVref documentation](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR/blob/main/README-AVref.md) for the reference pipeline's image-slot dependency.
+Reference dialogue and the timeline are planned for later checkpoints. See the [Licon AVref documentation](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR/blob/main/README-AVref.md) for the reference pipeline's image-slot dependency.
 
 ## License
 

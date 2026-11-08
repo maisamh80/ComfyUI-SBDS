@@ -3,6 +3,7 @@ import { api } from "../../scripts/api.js";
 import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.js";
 import { createResourceMonitor, resourceMeters } from "./resources.js";
 import { createTakeControls, latestTakeControls } from "./audio.js";
+import { createProjectLibrary, projectsView } from "./projects.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
@@ -88,10 +89,7 @@ function createStudio() {
         </nav>
         <span class="sbds-nav-tip" aria-hidden="true" hidden></span>
         <main tabindex="-1" autofocus>
-            <section class="sbds-empty-page" data-view="projects">
-                <h1>Projects</h1>
-                <p>Your saved projects will appear here.</p>
-            </section>
+            <section data-view="projects">${projectsView}</section>
             <section data-view="identity" hidden>
                 <p class="sbds-label">TTS IDENTITY / MUSIC / SFX</p>
                 <h1>Make a sound.</h1>
@@ -203,7 +201,9 @@ function createStudio() {
                 </form>
             </section>
             <section class="sbds-empty-page" data-view="studio" hidden>
-                <h1>Studio</h1>
+                <p class="sbds-label">STUDIO</p>
+                <h1 data-active-project>Studio</h1>
+                <p data-active-project-description>Open a project to start working in Studio.</p>
             </section>
             <section data-view="settings" hidden>
                 <p class="sbds-label">SETTINGS</p>
@@ -239,7 +239,7 @@ function createStudio() {
         </dialog>`;
     document.body.append(dialog);
 
-    const form = dialog.querySelector("form");
+    const form = dialog.querySelector('[data-view="identity"] form');
     const generationSettings = form.querySelector("[data-generation-settings]");
     generationSettings.addEventListener("invalid", () => { generationSettings.open = true; }, true);
     const generate = form.querySelector('button[type="submit"]');
@@ -270,6 +270,28 @@ function createStudio() {
     let ready = false;
     let purging = false;
     let purgeFeedback;
+    let activeProject;
+
+    function setProject(project) {
+        activeProject = project;
+        dialog.querySelector("[data-active-project]").textContent = project?.name ?? "Studio";
+        dialog.querySelector("[data-active-project-description]").textContent = project
+            ? [project.description, `${project.fps} FPS`].filter(Boolean).join(" · ")
+            : "Open a project to start working in Studio.";
+    }
+
+    const library = createProjectLibrary(
+        dialog.querySelector('[data-view="projects"]'),
+        api,
+        project => {
+            setProject(project);
+            openPage("studio");
+            main.focus();
+        },
+        project => {
+            if (activeProject?.id === project.id) setProject(null);
+        },
+    );
 
     function openPage(page) {
         navTip.hidden = true;
@@ -279,6 +301,7 @@ function createStudio() {
             else button.removeAttribute("aria-current");
         }
         main.scrollTop = 0;
+        if (page === "projects") void library.refresh();
     }
 
     function showNavTip(button) {
