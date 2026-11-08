@@ -92,7 +92,7 @@ The workspace header shows ComfyUI server CPU and RAM usage, plus NVIDIA GPU and
 
 ## Made by this workflow
 
-I created the voices in this video using this ComfyUI workflow. **— Maisam Hosaini**
+I created the voices in this video using this ComfyUI workflow.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=xAV3ux7SqSI"><img src="docs/go-go-goppy.png" alt="Go Go Goppy cover. Watch the voice demo on YouTube" width="560"></a>
