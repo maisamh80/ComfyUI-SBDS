@@ -22,13 +22,13 @@ An LTX-powered audio production studio inside ComfyUI. This first checkpoint pro
    | `models/text_encoders/` | LTX 2.5 Gemma text encoder with projection |
    | `models/vae/` | LTX 2.5 Audio VAE |
 
-4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open Studio**. Verify the model files under **Settings → Model setup**.
+4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open Studio**. The studio opens on **Projects**. Open **Settings → Model setup** from the sidebar to verify the model files.
 
 SBDS itself has no extra pip or npm dependencies. Model weights stay in your ComfyUI installation. Use an appropriate quantization and the ComfyUI memory settings for your hardware. The development workflow uses an INT8 transformer and text encoder. Start with a short sample when testing a new installation.
 
 ## First smoke run
 
-1. Select **Sound Effect** and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
+1. Open **Identity** in the sidebar, select **Sound Effect**, and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”
 2. Under **Generation settings**, keep the duration at 5 seconds, Generation FPS at 24, 8 steps, `uni_pc`, `simple`, and CFG 1.
 3. Click **Generate**. Check the progress bar and elapsed time, then play the take. Choose a **Format** and **Quality** beside the player and click **Download**. SBDS exports FLAC, WAV, MP3, or Opus from the same take. ComfyUI stores the original FLAC under `output/audio/SBDS/`.
 

@@ -65,13 +65,34 @@ function createStudio() {
             ${resourceMeters}
             <div class="sbds-actions">
                 <button type="button" data-action="purge" title="${purgeTitle}">Purge</button>
-                <button type="button" data-action="settings">Settings</button>
                 <button type="button" data-action="expand" aria-pressed="false">Expand</button>
                 <button type="button" data-action="close" aria-label="Close studio">✕</button>
             </div>
         </header>
+        <nav class="sbds-nav" aria-label="Studio navigation">
+            <button type="button" data-page="projects" aria-current="page" autofocus>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5h5l1.5 2h8.5v8.5h-15z"/></svg>
+                Projects
+            </button>
+            <button type="button" data-page="identity">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h2l2-5 3 10 3-10 2 5h3"/></svg>
+                Identity
+            </button>
+            <button type="button" data-page="studio">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/><rect x="5" y="3.5" width="6" height="3" rx="1"/><rect x="10" y="8.5" width="5" height="3" rx="1"/><rect x="6" y="13.5" width="8" height="3" rx="1"/></svg>
+                Studio
+            </button>
+            <button type="button" data-page="settings">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3v14m6-14v14m6-14v14M2 7h4m2 6h4m2-7h4"/></svg>
+                Settings
+            </button>
+        </nav>
         <main>
-            <section data-identity>
+            <section class="sbds-empty-page" data-view="projects">
+                <h1>Projects</h1>
+                <p>Your saved projects will appear here.</p>
+            </section>
+            <section data-view="identity" hidden>
                 <p class="sbds-label">IDENTITY / TEXT TO AUDIO</p>
                 <h1>Make a sound.</h1>
                 <p>Describe a character voice, musical cue, or sound effect for LTX.</p>
@@ -181,20 +202,23 @@ function createStudio() {
                     </div>
                 </form>
             </section>
-            <section data-settings hidden>
+            <section class="sbds-empty-page" data-view="studio" hidden>
+                <h1>Studio</h1>
+            </section>
+            <section data-view="settings" hidden>
                 <p class="sbds-label">SETTINGS</p>
-                <h2 tabindex="-1">Model setup</h2>
+                <h2>Model setup</h2>
                 <div data-model-fields></div>
                 <button type="button" data-action="refresh">Refresh model list</button>
                 <p data-model-status role="status">Loading ComfyUI model lists…</p>
             </section>
-            <section data-latest-take>
+            <section data-view="identity" data-latest-take hidden>
                 <p class="sbds-label">LATEST TAKE</p>
                 <p data-take>No audio generated yet.</p>
                 ${latestTakeControls}
             </section>
         </main>
-        <footer>
+        <footer data-view="identity" hidden>
             <span role="status">Loading ComfyUI model lists…</span>
             <div class="sbds-progress">
                 <progress max="1" value="0" aria-label="Generation progress"></progress>
@@ -221,10 +245,12 @@ function createStudio() {
     const generate = form.querySelector('button[type="submit"]');
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
-    const settingsButton = dialog.querySelector('[data-action="settings"]');
+    const navigation = [...dialog.querySelectorAll("[data-page]")];
+    const views = dialog.querySelectorAll("[data-view]");
+    const main = dialog.querySelector("main");
     const purgeButton = dialog.querySelector('[data-action="purge"]');
     const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), readResourceStats);
-    const settingsPanel = dialog.querySelector("[data-settings]");
+    const settingsPanel = dialog.querySelector('[data-view="settings"]');
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
     const footer = dialog.querySelector("footer");
     const status = footer.querySelector('[role="status"]');
@@ -243,6 +269,17 @@ function createStudio() {
     let ready = false;
     let purging = false;
     let purgeFeedback;
+
+    function openPage(page) {
+        for (const view of views) view.hidden = view.dataset.view !== page;
+        for (const button of navigation) {
+            if (button.dataset.page === page) button.setAttribute("aria-current", "page");
+            else button.removeAttribute("aria-current");
+        }
+        main.scrollTop = 0;
+    }
+
+    for (const button of navigation) button.onclick = () => openPage(button.dataset.page);
 
     for (const [key, title] of Object.entries(settingsLabels)) {
         const label = document.createElement("label");
@@ -344,15 +381,6 @@ function createStudio() {
             }, 3000);
         }
     };
-    settingsButton.onclick = () => {
-        const showSettings = settingsPanel.hidden;
-        settingsPanel.hidden = !showSettings;
-        dialog.querySelector("[data-identity]").hidden = showSettings;
-        dialog.querySelector("[data-latest-take]").hidden = showSettings;
-        footer.hidden = showSettings;
-        settingsButton.textContent = showSettings ? "Back to Identity" : "Settings";
-        if (showSettings) settingsPanel.querySelector("h2").focus();
-    };
     expand.onclick = () => {
         const expanded = dialog.classList.toggle("sbds-expanded");
         expand.textContent = expanded ? "Compact" : "Expand";
@@ -406,7 +434,7 @@ function createStudio() {
 
     promptButton.onclick = openPromptEditor;
     dialog.addEventListener("keydown", (event) => {
-        if (!settingsPanel.hidden || promptEditor.open || event.defaultPrevented || event.repeat) return;
+        if (footer.hidden || promptEditor.open || event.defaultPrevented || event.repeat) return;
         if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.key.toLowerCase() !== "p") return;
         if (event.target.closest('input, textarea, select, [contenteditable]')) return;
         event.preventDefault();
@@ -507,6 +535,7 @@ function createStudio() {
     void refreshModels();
     return () => {
         if (dialog.open) return;
+        openPage("projects");
         dialog.showModal();
         monitor.start();
     };
