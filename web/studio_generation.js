@@ -71,16 +71,14 @@ export async function referenceSetup(request, configure) {
     }
     const loras = options(definitions, referenceNodes[0], "lora_name");
     const vaes = options(definitions, "VAELoader", "vae_name");
-    const lora = configure?.lora || loras.find(name => /avref|licon.*msr.*v2/i.test(name));
-    const vae = configure?.vae || vaes.find(name => /ltx.*video.*vae/i.test(name));
-    if (!loras.includes(lora) || !vaes.includes(vae)) {
-        throw new Error("Choose an AVref LoRA and LTX video VAE in Studio’s Reference setup.");
+    const { lora, vae } = configure;
+    if (!lora || !vae || !loras.includes(lora) || !vaes.includes(vae)) {
+        throw new Error("Choose an AVref LoRA and LTX Video VAE in Settings → Model setup.");
     }
     return { lora, vae };
 }
 
-export async function referenceOptions(request) {
-    const definitions = await request("/object_info");
+export function referenceOptions(definitions) {
     return {
         loras: options(definitions, referenceNodes[0], "lora_name"),
         vaes: options(definitions, "VAELoader", "vae_name"),

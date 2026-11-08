@@ -6,10 +6,12 @@ import { createTakeControls, latestTakeControls } from "./audio.js";
 import { createProjectLibrary, projectsView } from "./projects.js";
 import { createUpdateControls, updatesView } from "./updates.js";
 import { createStudioTimeline, studioView } from "./studio_timeline.js";
+import { referenceOptions } from "./studio_generation.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
 const purgeTitle = "Ask ComfyUI to unload models and clear its execution cache";
+const referenceSettingsKey = "sbds-studio-reference-settings";
 const settingsLabels = {
     model: "LTX diffusion model", encoder: "LTX text encoder", vae: "Audio VAE",
     sampler: "Sampler", scheduler: "Scheduler",
@@ -211,6 +213,12 @@ function createStudio() {
                 <p class="sbds-label">SETTINGS</p>
                 <h2>Model setup</h2>
                 <div data-model-fields></div>
+                <h3>Voice reference models</h3>
+                <p class="sbds-project-hint">Only needed for voice references in Studio. MSR uses the Video VAE to encode its blank image.</p>
+                <div class="sbds-fields">
+                    <label>AVref LoRA<select data-reference-model="lora"></select></label>
+                    <label>LTX Video VAE<select data-reference-model="vae"></select></label>
+                </div>
                 <button type="button" data-action="refresh">Refresh model list</button>
                 <p data-model-status role="status">Loading ComfyUI model lists…</p>
             </section>
@@ -276,7 +284,20 @@ function createStudio() {
     let purging = false;
     let purgeFeedback;
     let activeProject;
-    const studioTimeline = createStudioTimeline(dialog.querySelector('[data-view="studio"]'), api, request, modelSettings);
+    const referenceSelects = {
+        lora: settingsPanel.querySelector('[data-reference-model="lora"]'),
+        vae: settingsPanel.querySelector('[data-reference-model="vae"]'),
+    };
+    const referenceSettings = () => ({
+        lora: referenceSelects.lora.value,
+        vae: referenceSelects.vae.value,
+    });
+    for (const select of Object.values(referenceSelects)) {
+        select.addEventListener("change", () => {
+            localStorage.setItem(referenceSettingsKey, JSON.stringify(referenceSettings()));
+        });
+    }
+    const studioTimeline = createStudioTimeline(dialog.querySelector('[data-view="studio"]'), api, request, modelSettings, referenceSettings);
     const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api, () => activeProject);
 
     function setProject(project) {
@@ -401,6 +422,16 @@ function createStudio() {
             })).map((node) => node.class_type));
             const missing = [...required].filter((type) => !definitions[type]);
             if (missing.length) throw new Error(`Missing ComfyUI nodes: ${missing.join(", ")}. See the SBDS installation guide.`);
+
+            const { loras, vaes } = referenceOptions(definitions);
+            const previousReferences = readSaved(referenceSettingsKey) || {};
+            for (const [key, choices] of Object.entries({ lora: loras, vae: vaes })) {
+                const select = referenceSelects[key];
+                const saved = select.value || previousReferences[key];
+                const placeholder = choices.length ? "Select a model…" : "No models available";
+                select.replaceChildren(new Option(placeholder, ""), ...choices.map(name => new Option(name, name)));
+                select.value = choices.includes(saved) ? saved : "";
+            }
 
             const previous = { ...readSaved(settingsKey), ...Object.fromEntries(Object.entries(modelSettings()).filter(([, value]) => value)) };
             for (const [key, [node, input, preferred]] of Object.entries(modelInputs)) {

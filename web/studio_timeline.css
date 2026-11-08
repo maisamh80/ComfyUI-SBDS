@@ -62,7 +62,7 @@
     min-height: 90px;
     isolation: isolate;
 }
-.sbds .sbds-track-row { display: grid; grid-template-columns: var(--track-header) var(--timeline-width); min-height: 75px; border-bottom: 1px solid #303839; }
+.sbds .sbds-track-row { display: grid; grid-template-columns: var(--track-header) var(--timeline-width); min-height: 59px; border-bottom: 1px solid #303839; }
 .sbds .sbds-track-row[data-color] .sbds-track-controls { box-shadow: inset 3px 0 var(--clip, #86c9a8); }
 .sbds .sbds-track-controls {
     position: sticky;
@@ -80,7 +80,6 @@
 .sbds .sbds-track-actions { display: flex; gap: 3px; }
 .sbds .sbds-track-actions button { min-width: 22px; padding: 1px 4px; font-size: 11px; }
 .sbds .sbds-track-actions [aria-pressed="true"] { color: var(--mint); background: #264139; }
-.sbds .sbds-track-controls .sbds-track-color { min-width: 0; max-width: 44px; padding: 1px 2px; font-size: 10px; }
 .sbds .sbds-track-lane {
     position: relative;
     min-width: 0;
@@ -121,19 +120,48 @@
     cursor: grab;
     user-select: none;
 }
-.sbds .sbds-timeline [data-color="blue"] { --clip: #8eb8f0; }
-.sbds .sbds-timeline [data-color="lilac"] { --clip: #bba0e7; }
-.sbds .sbds-timeline [data-color="rose"] { --clip: #e09cab; }
-.sbds .sbds-timeline [data-color="amber"] { --clip: #e7c675; }
-.sbds .sbds-timeline [data-color="cyan"] { --clip: #7bd4df; }
-.sbds .sbds-timeline [data-color="orange"] { --clip: #e8a880; }
-.sbds .sbds-timeline [data-color="slate"] { --clip: #aab5c1; }
+.sbds [data-view="studio"] [data-color="mint"] { --clip: #86c9a8; }
+.sbds [data-view="studio"] [data-color="blue"] { --clip: #8eb8f0; }
+.sbds [data-view="studio"] [data-color="lilac"] { --clip: #bba0e7; }
+.sbds [data-view="studio"] [data-color="rose"] { --clip: #e09cab; }
+.sbds [data-view="studio"] [data-color="amber"] { --clip: #e7c675; }
+.sbds [data-view="studio"] [data-color="cyan"] { --clip: #7bd4df; }
+.sbds [data-view="studio"] [data-color="orange"] { --clip: #e8a880; }
+.sbds [data-view="studio"] [data-color="slate"] { --clip: #aab5c1; }
 .sbds .sbds-timeline-clip[data-ready="false"] { border-style: dashed; }
 .sbds .sbds-timeline-clip[data-selected="true"] { z-index: 1; box-shadow: inset 0 0 0 1px #edf7f1; }
 .sbds .sbds-timeline-clip:focus-visible { outline: 2px solid #edf7f1; outline-offset: -3px; }
 .sbds .sbds-clip-name, .sbds .sbds-timeline-clip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 .sbds .sbds-clip-name { font-size: 12px; }
-.sbds .sbds-timeline-clip small { position: absolute; bottom: 3px; left: 10px; font-size: 10px; }
+.sbds .sbds-timeline-clip small { position: absolute; bottom: 3px; left: 10px; max-width: calc(100% - 38px); font-size: 10px; }
+.sbds .sbds-color-trigger { display: inline-grid; place-items: center; min-width: 22px; padding: 2px 4px; }
+.sbds .sbds-color-swatch { display: block; width: 10px; height: 10px; border: 1px solid #0005; border-radius: 3px; background: var(--clip, #86c9a8); }
+.sbds .sbds-timeline-clip .sbds-color-trigger {
+    position: absolute;
+    right: 8px;
+    bottom: 2px;
+    z-index: 4;
+    min-width: 0;
+    padding: 2px;
+    border-color: transparent;
+    background: transparent;
+}
+.sbds .sbds-timeline-clip .sbds-color-trigger:hover { background: #0b1213a0; }
+.sbds .sbds-color-palette {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    padding: 6px;
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    background: #1b2224;
+    box-shadow: 0 5px 18px #0009;
+}
+.sbds .sbds-color-palette:popover-open { display: grid; grid-template-columns: repeat(4, 27px); gap: 4px; }
+.sbds .sbds-color-choice { display: grid; width: 27px; height: 27px; place-items: center; padding: 2px; }
+.sbds .sbds-color-choice .sbds-color-swatch { width: 17px; height: 17px; }
+.sbds .sbds-color-choice[aria-pressed="true"] { outline: 1px solid var(--mint); }
+.sbds .sbds-color-choice[data-inherited] .sbds-color-swatch { border: 1px dashed #111; }
 .sbds .sbds-clip-handle { position: absolute; }
 .sbds .sbds-clip-handle:is([data-drag="left"], [data-drag="right"]) { z-index: 2; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
 .sbds .sbds-clip-handle[data-drag="left"] { left: 0; }

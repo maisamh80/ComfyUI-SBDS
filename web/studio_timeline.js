@@ -1,4 +1,4 @@
-import { compilePrompt, planTake, queueStudioTake, referenceOptions, referenceSetup, studioGraph } from "./studio_generation.js";
+import { compilePrompt, planTake, queueStudioTake, referenceSetup, studioGraph } from "./studio_generation.js";
 import { createTimelinePlayback } from "./timeline_playback.js";
 
 const transportIcon = name => new URL(`./artwork/${name}.svg`, import.meta.url).href;
@@ -6,7 +6,6 @@ const transportIcon = name => new URL(`./artwork/${name}.svg`, import.meta.url).
 const colors = ["mint", "blue", "lilac", "rose", "amber", "cyan", "orange", "slate"];
 const kinds = { dialogue: "Dialogue", music: "Music", sfx: "Sound Effects" };
 const timeLimit = 600;
-const settingsKey = "sbds-studio-reference-settings";
 const tags = {
     Language: ["lang:English", "lang:Persian", "lang:Spanish", "lang:French", "lang:Chinese", "lang:Japanese", "lang:Korean", "lang:Arabic", "lang:Portuguese", "lang:Russian"],
     Emotion: ["emotion:happy", "emotion:sad", "emotion:angry", "emotion:scared", "emotion:surprised", "emotion:calm"],
@@ -59,7 +58,6 @@ export const studioView = `
                     <label>Duration (s)<input type="number" data-clip="duration" min="0.01" step="any"></label>
                     <label>Source offset (s)<input type="number" data-clip="offset" min="0" step="any"></label>
                     <label>Gain (dB)<input type="number" data-clip="gain" min="-60" max="12" step="0.1"></label>
-                    <label>Color<select data-clip="color"><option value="">Track color</option>${colors.map(color => `<option>${color}</option>`).join("")}</select></label>
                     <label>Fade in (s)<input type="number" data-clip="fadeIn" min="0" step="any"></label>
                     <label>Fade out (s)<input type="number" data-clip="fadeOut" min="0" step="any"></label>
                     <label>Audio source<select data-clip="media"></select></label>
@@ -74,14 +72,7 @@ export const studioView = `
                         </select></label>
                     </div>
                     <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
-                    <details data-reference-setup><summary>Reference setup</summary>
-                        <div class="sbds-fields">
-                            <label>AVref LoRA<select data-reference-model="lora"></select></label>
-                            <label>LTX video VAE<select data-reference-model="vae"></select></label>
-                        </div>
-                        <p class="sbds-project-hint">Only required for reference voices. Studio supplies the blank image automatically.</p>
-                    </details>
-                </div>
+                    </div>
                 <details><summary>Generation settings</summary>
                     <div class="sbds-fields">
                         <label>Generation FPS<input data-generation="fps" type="number" min="1" max="60"></label>
@@ -93,11 +84,22 @@ export const studioView = `
                 </details>
                 <div class="sbds-actions">
                     <button type="button" class="sbds-primary" data-studio-generate>Generate clip</button>
+                <button type="button" data-studio-final-prompt>Final Prompt</button>
                     <button type="button" data-studio-delete-clip>Remove clip</button>
                 </div>
             </fieldset>
         </div>
     </div>
+
+    <div class="sbds-color-palette" data-color-palette popover="auto" role="group" aria-label="Timeline colors"></div>
+    <dialog class="sbds-prompt-editor sbds-studio-prompt" aria-label="Final Prompt">
+        <form method="dialog">
+            <h2>Final Prompt</h2>
+            <p>Review the text sent to LTX for this clip.</p>
+            <textarea rows="9" aria-label="Final prompt" readonly></textarea>
+            <button type="submit">Close</button>
+        </form>
+    </dialog>
 `;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -119,13 +121,15 @@ function choiceList(select, values, empty, value) {
     if (value && !select.value) select.add(new Option("Missing audio", value, false, true));
 }
 
-export function createStudioTimeline(section, api, request, modelSettings) {
+export function createStudioTimeline(section, api, request, modelSettings, referenceSettings) {
     const get = selector => section.querySelector(selector);
     const body = get("[data-studio-body]");
     const tools = get("[data-studio-tools]");
     const status = get("[data-studio-status]");
     const timeline = get("[data-timeline]");
     const inspector = get("[data-clip-inspector]");
+    const colorPalette = get("[data-color-palette]");
+    const finalPrompt = get(".sbds-studio-prompt");
     const inspectorScroll = get("[data-inspector-scroll]");
     const zoom = get("[data-studio-zoom]");
     const play = get("[data-studio-play]");
@@ -140,8 +144,6 @@ export function createStudioTimeline(section, api, request, modelSettings) {
     let playbackTicket = 0;
     let jobId;
     let busy = false;
-    let referenceConfig = {};
-    try { referenceConfig = JSON.parse(localStorage.getItem(settingsKey)) || {}; } catch {}
 
     function showPlaybackState(playing) {
         running = playing;
@@ -316,7 +318,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
     }
 
     function drag(event, track, clip, node) {
-        if (event.button !== 0 || busy) return;
+        if (event.button !== 0 || busy || event.target.closest("[data-color-trigger]")) return;
         event.preventDefault();
         stopPlayback();
         const handle = event.target.closest("[data-drag]")?.dataset.drag || "move";
@@ -354,8 +356,45 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         node.addEventListener("pointercancel", finish);
     }
 
+    function colorButton(label, value, inherited, update) {
+        const button = element("button", "sbds-color-trigger");
+        button.dataset.colorTrigger = "";
+        button.dataset.color = value || inherited;
+        button.setAttribute("aria-label", label);
+        button.setAttribute("aria-haspopup", "true");
+        button.disabled = busy;
+        button.append(element("span", "sbds-color-swatch"));
+        button.onclick = () => {
+            if (colorPalette.matches(":popover-open")) colorPalette.hidePopover();
+            colorPalette.replaceChildren();
+            for (const color of inherited ? ["", ...colors] : colors) {
+                const item = element("button", "sbds-color-choice");
+                item.dataset.color = color || inherited;
+                item.setAttribute("aria-label", color || "Use track color");
+                item.setAttribute("aria-pressed", String(color === value));
+                if (!color) item.dataset.inherited = "";
+                item.append(element("span", "sbds-color-swatch"));
+                item.onclick = () => {
+                    update(color);
+                    changed();
+                    render();
+                };
+                colorPalette.append(item);
+            }
+            const anchor = button.getBoundingClientRect();
+            colorPalette.showPopover();
+            const width = colorPalette.offsetWidth;
+            const height = colorPalette.offsetHeight;
+            colorPalette.style.left = `${Math.max(6, Math.min(anchor.left, window.innerWidth - width - 6))}px`;
+            colorPalette.style.top = `${anchor.bottom + height + 6 > window.innerHeight ? Math.max(6, anchor.top - height - 4) : anchor.bottom + 4}px`;
+            colorPalette.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+        };
+        return button;
+    }
+
     function render() {
         if (!active?.timeline) return;
+        if (colorPalette.matches(":popover-open")) colorPalette.hidePopover();
         const tracks = active.timeline.tracks;
         const fpsInput = get("[data-studio-fps]");
         fpsInput.value = active.project.fps;
@@ -449,11 +488,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
             plus.title = "Add clip";
             plus.setAttribute("aria-label", `Add clip to ${track.name}`);
             plus.onclick = () => addClip(track);
-            const color = element("select", "sbds-track-color");
-            color.setAttribute("aria-label", "Track color");
-            color.replaceChildren(...colors.map(value => new Option(value, value)));
-            color.value = track.color;
-            color.onchange = () => { track.color = color.value; changed(); render(); };
+            const color = colorButton("Track color", track.color, "", value => { track.color = value; });
             const remove = element("button", "", "×");
             remove.title = "Remove empty track";
             remove.setAttribute("aria-label", `Remove track ${track.name}`);
@@ -463,8 +498,8 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                 selected = undefined;
                 changed(); render();
             };
-            actions.append(plus, toggle("M", "Mute track", "muted"), toggle("S", "Solo track", "solo"), remove);
-            controls.append(name, actions, color);
+            actions.append(plus, toggle("M", "Mute track", "muted"), toggle("S", "Solo track", "solo"), color, remove);
+            controls.append(name, actions);
             if (busy) for (const input of controls.querySelectorAll("input, select, button")) input.disabled = true;
             const lane = element("div", "sbds-track-lane");
             lane.onclick = event => { if (event.target === lane) { seek(event); select(track); } };
@@ -474,10 +509,10 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                 node.dataset.selected = String(clip.id === selected?.clip);
                 node.dataset.ready = String(Boolean(clip.media));
                 node.tabIndex = 0;
-                node.setAttribute("role", "button");
+                node.setAttribute("role", "group");
                 node.setAttribute("aria-label", clip.name);
                 const label = element("span", "sbds-clip-name", clip.name);
-                node.append(label, element("small"));
+                node.append(label, element("small"), colorButton("Clip color", clip.color, track.color, value => { clip.color = value; }));
                 for (const [handle, title] of [["left", "Trim start"], ["right", "Trim end"], ["fadeIn", "Fade in"], ["fadeOut", "Fade out"], ["gain", "Clip gain"]]) {
                     const control = element("span", "sbds-clip-handle");
                     control.dataset.drag = handle;
@@ -487,7 +522,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                 }
                 drawClip(node, clip);
                 node.onpointerdown = event => drag(event, track, clip, node);
-                node.onkeydown = event => { if (event.key === "Enter") { event.preventDefault(); select(track, clip, true); } };
+                node.onkeydown = event => { if (event.key === "Enter" && event.target === node) { event.preventDefault(); select(track, clip, true); } };
                 lane.append(node);
             }
             row.append(controls, lane);
@@ -555,19 +590,6 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         prompt.dispatchEvent(new Event("input"));
         event.target.value = "";
         prompt.focus();
-    };
-
-    get("[data-reference-setup]").ontoggle = async event => {
-        if (!event.currentTarget.open) return;
-        try {
-            const { loras, vaes } = await referenceOptions(request);
-            choiceList(get('[data-reference-model="lora"]'), loras.map(name => [name, name]), "Auto-detect AVref LoRA", referenceConfig.lora);
-            choiceList(get('[data-reference-model="vae"]'), vaes.map(name => [name, name]), "Auto-detect video VAE", referenceConfig.vae);
-        } catch (error) { message(error.message, true); }
-    };
-    for (const input of inspector.querySelectorAll("[data-reference-model]")) input.onchange = () => {
-        referenceConfig[input.dataset.referenceModel] = input.value;
-        try { localStorage.setItem(settingsKey, JSON.stringify(referenceConfig)); } catch {}
     };
 
     get("[data-studio-track]").onclick = () => {
@@ -685,6 +707,31 @@ export function createStudioTimeline(section, api, request, modelSettings) {
         if (jobId && detail.prompt_id === jobId && detail.max) progressBar.value = detail.value / detail.max;
     });
 
+    function preparePrompts(track, clip) {
+        const refs = track.kind === "dialogue" ? [...new Set(clip.refs.filter(Boolean))] : [];
+        const parts = planTake(track.kind, clip, clip.generation.fps).map(part => part.silence ? part : {
+            ...part, prompt: compilePrompt(track.kind, part.text, refs.length),
+        });
+        return { refs, parts };
+    }
+
+    get("[data-studio-final-prompt]").onclick = () => {
+        const { track, clip } = findSelected();
+        if (!clip) return;
+        const preview = finalPrompt.querySelector("textarea");
+        try {
+            const { parts } = preparePrompts(track, clip);
+            const positive = parts.length === 1 ? parts[0].prompt : parts.map((part, index) =>
+                part.silence ? `[Silence: ${part.duration}s]` : `Part ${index + 1}\n${part.prompt}`
+            ).join("\n\n");
+            const negative = clip.generation.negative;
+            preview.value = negative ? `${positive}\n\nNegative prompt\n${negative}` : positive;
+        } catch (error) {
+            preview.value = error.message;
+        }
+        finalPrompt.showModal();
+    };
+
     async function generate(jobs) {
         if (busy || !jobs.length) { if (!busy) message("Add a prompt to a clip first."); return; }
         const session = active;
@@ -697,9 +744,11 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                 message(`Generating ${index + 1}/${jobs.length} · ${clip.name}`);
                 const { fps, steps, cfg, seed, negative } = clip.generation;
                 if (clip.duration > 120) throw new Error("Split generated clips longer than two minutes.");
-                const parts = planTake(track.kind, clip, fps);
-                const refs = track.kind === "dialogue" ? [...new Set(clip.refs.filter(Boolean))] : [];
-                const referenceModels = refs.length ? await referenceSetup(request, referenceConfig) : null;
+                const { parts, refs } = preparePrompts(track, clip);
+                const referenceModels = refs.length ? await referenceSetup(request, referenceSettings()) : null;
+                if (referenceModels && referenceModels.vae === settings.vae) {
+                    throw new Error("Choose the LTX Video VAE separately from the Audio VAE in Model setup.");
+                }
                 const references = [];
                 for (const id of refs) {
                     const { input } = await service(session, `/reference/${encodeURIComponent(id)}`, {});
@@ -711,7 +760,7 @@ export function createStudioTimeline(section, api, request, modelSettings) {
                     progressBar.value = 0;
                     const graph = studioGraph({
                         ...settings, text: part.text, negative,
-                        finalPrompt: compilePrompt(track.kind, part.text, references.length),
+                        finalPrompt: part.prompt,
                         seconds: Math.max(8 / fps, Math.ceil(part.duration * fps / 8) * 8 / fps),
                         fps, steps, cfg, seed: seed === "" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed),
                     }, references, referenceModels);
