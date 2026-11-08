@@ -299,7 +299,7 @@
 .sbds progress::-webkit-progress-bar { border-radius: 3px; background: #505758; }
 .sbds progress::-webkit-progress-value { border-radius: 3px; background: var(--mint); }
 .sbds progress::-moz-progress-bar { border-radius: 3px; background: var(--mint); }
-.sbds [data-model-status] { margin: 12px 0 0; }
+.sbds [data-model-status], .sbds [data-update-status] { margin: 12px 0 0; }
 .sbds[data-state="error"] footer [role="status"],
 .sbds [data-model-status][data-state="error"] { color: #f3a8a8; }
 .sbds .sbds-prompt-editor {

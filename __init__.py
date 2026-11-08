@@ -3,6 +3,7 @@ from server import PromptServer
 from .audio_export import export_audio
 from .projects import register_project_routes
 from .resources import resource_stats
+from .updates import register_update_routes
 
 
 class SBDSStudio:
@@ -23,6 +24,7 @@ class SBDSStudio:
 PromptServer.instance.routes.get("/sbds/resources")(resource_stats)
 PromptServer.instance.routes.get("/sbds/export")(export_audio)
 register_project_routes(PromptServer.instance)
+register_update_routes(PromptServer.instance)
 
 NODE_CLASS_MAPPINGS = {
     "SBDSStudio": SBDSStudio,

@@ -28,6 +28,10 @@ An LTX-powered audio production studio inside ComfyUI. This first checkpoint pro
 
 SBDS itself has no extra pip or npm dependencies. Model weights stay in your ComfyUI installation. Use an appropriate quantization and the ComfyUI memory settings for your hardware. The development workflow uses an INT8 transformer and text encoder. Start with a short sample when testing a new installation.
 
+## Update SBDS
+
+In a Git installation on the `main` branch, open **Settings → Updates** and select **Check for updates**, then **Update now** when offered. SBDS fast-forwards to the checked GitHub revision and keeps your project folders and local edits. Restart ComfyUI and refresh the browser after the update.
+
 ## First smoke run
 
 1. Open **Identity** in the sidebar, select **Sound Effect**, and try “A soft, steady rain patters on leaves in a forest. No thunder or speech.”

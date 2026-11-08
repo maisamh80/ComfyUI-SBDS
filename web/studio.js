@@ -4,6 +4,7 @@ import { buildAudioGraph, describeSound, modelInputs, outputNode } from "./t2a.j
 import { createResourceMonitor, resourceMeters } from "./resources.js";
 import { createTakeControls, latestTakeControls } from "./audio.js";
 import { createProjectLibrary, projectsView } from "./projects.js";
+import { createUpdateControls, updatesView } from "./updates.js";
 
 const settingsKey = "sbds-model-setup";
 const promptKey = "sbds-final-prompt";
@@ -212,6 +213,7 @@ function createStudio() {
                 <button type="button" data-action="refresh">Refresh model list</button>
                 <p data-model-status role="status">Loading ComfyUI model lists…</p>
             </section>
+            <section data-view="settings" data-sbds-updates hidden>${updatesView}</section>
             <section data-view="identity" data-latest-take hidden>
                 <p class="sbds-label">LATEST TAKE</p>
                 <p data-take>No audio generated yet.</p>
@@ -254,6 +256,7 @@ function createStudio() {
     const monitor = createResourceMonitor(dialog.querySelector(".sbds-meters"), readResourceStats);
     const settingsPanel = dialog.querySelector('[data-view="settings"]');
     const modelStatus = settingsPanel.querySelector("[data-model-status]");
+    const refreshUpdates = createUpdateControls(dialog.querySelector("[data-sbds-updates]"), api);
     const footer = dialog.querySelector("footer");
     const status = footer.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
@@ -307,6 +310,7 @@ function createStudio() {
         }
         main.scrollTop = 0;
         if (page === "projects") void library.refresh();
+        if (page === "settings") void refreshUpdates();
     }
 
     function showNavTip(button) {
