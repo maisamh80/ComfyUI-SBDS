@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from io import BytesIO
 from ipaddress import ip_address
 import json
+import ntpath
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from secrets import choice
 from shutil import copyfileobj
 import tempfile
@@ -223,6 +224,11 @@ def add_library_sound(index, project_id, data):
     name = name.strip()
     if any(unicodedata.category(character) == "Cc" for character in name):
         raise ValueError("Use a single line for the sound name.")
+    filename = f"{name}.flac"
+    is_reserved = getattr(ntpath, "isreserved", None)
+    reserved = is_reserved(filename) if is_reserved else PureWindowsPath(filename).is_reserved()
+    if name.endswith(".") or reserved or any(character in '<>:"/\\|?*' for character in name):
+        raise ValueError("Use a valid file name without slashes, reserved names, or a trailing period.")
     key = library_key(name)
     with LOCK:
         root = Path(open_project(index, project_id)["path"])
@@ -240,13 +246,18 @@ def add_library_sound(index, project_id, data):
         except FileNotFoundError as error:
             raise ValueError(str(error)) from error
         sound_id = uuid4().hex
-        entry = {"id": sound_id, "name": name, "file": f"{sound_id}.flac"}
-        target = assets / entry["file"]
+        entry = {"id": sound_id, "name": name, "file": filename}
+        target = assets / filename
         created = False
         try:
-            with source.open("rb") as original, target.open("xb") as copy:
+            with source.open("rb") as original:
+                try:
+                    copy = target.open("xb")
+                except FileExistsError as error:
+                    raise DuplicateLibraryName("A file with this name already exists in the project. Choose a different name.") from error
                 created = True
-                copyfileobj(original, copy)
+                with copy:
+                    copyfileobj(original, copy)
             library[key] = entry
             write_json(library_path, library)
         except Exception:
