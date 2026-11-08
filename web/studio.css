@@ -3,7 +3,7 @@
     --edge: #353e41;
     --mint: #b9ebca;
     --nav-width: 108px;
-    --nav-icon-size: 64px;
+    --nav-icon-size: 44px;
     --page-inset: clamp(22px, 3.5vw, 40px);
     position: fixed;
     width: min(960px, calc(100vw - 32px));
@@ -258,7 +258,7 @@
 }
 .sbds .sbds-prompt-editor::backdrop { background: #0a0d10b8; }
 @media (max-width: 660px) {
-    .sbds { --nav-width: 82px; --nav-icon-size: 52px; --page-inset: 12px; }
+    .sbds { --nav-width: 82px; --nav-icon-size: 36px; --page-inset: 12px; }
     .sbds main { padding-block: 14px; }
     .sbds .sbds-nav { padding: 12px 6px; }
     .sbds .sbds-title { padding-left: 40px; }
@@ -267,6 +267,6 @@
     .sbds .sbds-fields, .sbds .sbds-voice .sbds-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) {
-    .sbds { --nav-width: 72px; --nav-icon-size: 44px; }
+    .sbds { --nav-width: 72px; --nav-icon-size: 30px; }
     .sbds .sbds-fields, .sbds .sbds-voice .sbds-fields { grid-template-columns: minmax(0, 1fr); }
 }
