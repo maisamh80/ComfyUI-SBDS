@@ -1,3 +1,23 @@
+.sbds-node-launcher {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 5px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #eef3f2;
+    font: 600 13px/1.4 system-ui, sans-serif;
+    text-align: center;
+    cursor: pointer;
+}
+.sbds-node-launcher img { width: 100%; height: 100%; min-height: 0; object-fit: contain; pointer-events: none; }
+.sbds-node-launcher:hover { border-color: #b9ebca66; background: #0b141c28; }
+.sbds-node-launcher:focus-visible { outline: 2px solid #b9ebca; outline-offset: -2px; }
+
 .sbds {
     --surface: #181c1e;
     --edge: #353e41;

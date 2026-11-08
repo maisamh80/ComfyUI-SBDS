@@ -569,9 +569,26 @@ app.registerExtension({
     name: "SBDS.Studio",
     nodeCreated(node) {
         if (node.comfyClass !== "SBDSStudio") return;
-        node.addWidget("button", "Open Studio", null, () => {
+        const openStudio = () => {
             studio ??= createStudio();
             studio();
+        };
+        if (typeof node.addDOMWidget !== "function") {
+            node.addWidget("button", "Open SBDS", null, openStudio);
+            return;
+        }
+
+        const launcher = document.createElement("button");
+        launcher.type = "button";
+        launcher.className = "sbds-node-launcher";
+        launcher.innerHTML = `<img src="${artwork("node-logo")}" alt="" draggable="false"><span>Open SBDS</span>`;
+        launcher.onclick = openStudio;
+        node.addDOMWidget("Open SBDS", "button", launcher, {
+            serialize: false,
+            hideOnZoom: false,
+            getMinHeight: () => 130,
+            getHeight: () => "100%",
         });
+        node.setSize([Math.max(node.size[0], 220), Math.max(node.size[1], 160)]);
     },
 });

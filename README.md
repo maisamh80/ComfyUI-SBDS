@@ -22,7 +22,7 @@ An LTX-powered audio production studio inside ComfyUI. This first checkpoint pro
    | `models/text_encoders/` | LTX 2.5 Gemma text encoder with projection |
    | `models/vae/` | LTX 2.5 Audio VAE |
 
-4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open Studio**. The studio opens on **Projects**. Open **Settings → Model setup** from the sidebar to verify the model files.
+4. Restart ComfyUI and refresh the browser. Add **SBDS · Sound Band Design Studio** and click **Open SBDS**. The studio opens on **Projects**. Open **Settings → Model setup** from the sidebar to verify the model files.
 
 SBDS itself has no extra pip or npm dependencies. Model weights stay in your ComfyUI installation. Use an appropriate quantization and the ComfyUI memory settings for your hardware. The development workflow uses an INT8 transformer and text encoder. Start with a short sample when testing a new installation.
 
