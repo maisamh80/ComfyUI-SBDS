@@ -214,12 +214,12 @@
 .sbds a { color: var(--mint); }
 .sbds .sbds-audio-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
 .sbds .sbds-player {
-    flex: 1 1 360px;
+    flex: 1 1 244px;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 9px;
-    padding: 6px 10px 6px 6px;
+    gap: 7px;
+    padding: 6px 8px 6px 6px;
     border: 1px solid #385348;
     border-radius: 10px;
     background: #111b17;
@@ -264,8 +264,8 @@
     background: var(--mint);
 }
 .sbds .sbds-player [data-seek] { flex: 1; }
-.sbds .sbds-player [data-volume] { flex: 0 1 54px; }
-.sbds .sbds-export { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.sbds .sbds-player [data-volume] { flex: 0 1 44px; }
+.sbds .sbds-export { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; }
 .sbds .sbds-export label { margin: 0; color: #c7d3d2; font-size: 12px; }
 .sbds .sbds-export [data-format] { min-width: 76px; }
 .sbds .sbds-export [data-quality] { min-width: 109px; }
