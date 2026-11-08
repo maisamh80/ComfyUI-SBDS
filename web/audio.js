@@ -2,6 +2,18 @@ import { listLibraryProjects, saveProjectSound } from "./projects.js";
 
 const speakerIcon = '<path d="M3 7h3l4-3v12l-4-3H3z" fill="currentColor"/>';
 
+export const audioExportFields = `
+            <label>Format
+                <select data-format>
+                    <option value="flac">FLAC</option>
+                    <option value="wav">WAV</option>
+                    <option value="mp3">MP3</option>
+                    <option value="opus">Opus</option>
+                </select>
+            </label>
+            <label>Quality<select data-quality></select></label>
+`;
+
 export const latestTakeControls = `
     <div class="sbds-audio-row" hidden>
         <audio preload="metadata" hidden></audio>
@@ -24,15 +36,7 @@ export const latestTakeControls = `
             <input type="range" data-volume aria-label="Volume" min="0" max="1" step="0.05" value="1">
         </div>
         <div class="sbds-export" role="group" aria-label="Audio export">
-            <label>Format
-                <select data-format>
-                    <option value="flac">FLAC</option>
-                    <option value="wav">WAV</option>
-                    <option value="mp3">MP3</option>
-                    <option value="opus">Opus</option>
-                </select>
-            </label>
-            <label>Quality<select data-quality></select></label>
+            ${audioExportFields}
             <button type="button" data-add-library>Add to Library</button>
             <button type="button" data-download>Download</button>
         </div>
@@ -62,6 +66,28 @@ const qualityOptions = {
 };
 const defaultQuality = { flac: "lossless", wav: "16", mp3: "192", opus: "128" };
 
+export function bindAudioExportFields(section) {
+    const format = section.querySelector("[data-format]");
+    const quality = section.querySelector("[data-quality]");
+    const selectedQuality = { ...defaultQuality };
+    function updateQuality() {
+        const options = qualityOptions[format.value];
+        quality.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+        quality.value = selectedQuality[format.value];
+        quality.disabled = options.length === 1;
+    }
+    format.onchange = updateQuality;
+    quality.onchange = () => { selectedQuality[format.value] = quality.value; };
+    updateQuality();
+    return {
+        values: () => ({ format: format.value, quality: quality.value }),
+        disable(disabled) {
+            format.disabled = disabled;
+            quality.disabled = disabled || qualityOptions[format.value].length === 1;
+        },
+    };
+}
+
 function formatTime(seconds) {
     const total = Number.isFinite(seconds) ? Math.floor(seconds) : 0;
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
@@ -75,8 +101,7 @@ export function createTakeControls(section, api, getProject) {
     const mute = row.querySelector("[data-mute]");
     const volume = row.querySelector("[data-volume]");
     const time = row.querySelector(".sbds-audio-time");
-    const format = row.querySelector("[data-format]");
-    const quality = row.querySelector("[data-quality]");
+    const exportFields = bindAudioExportFields(row);
     const download = row.querySelector("[data-download]");
     const addToLibrary = row.querySelector("[data-add-library]");
     const status = section.querySelector(".sbds-audio-status");
@@ -89,7 +114,6 @@ export function createTakeControls(section, api, getProject) {
     const libraryError = libraryForm.querySelector("[data-library-error]");
     const save = libraryForm.querySelector('button[type="submit"]');
     const cancel = libraryForm.querySelector("[data-library-cancel]");
-    const selectedQuality = { ...defaultQuality };
     let filename;
     let libraryTake;
     let libraryProjectId;
@@ -220,20 +244,12 @@ export function createTakeControls(section, api, getProject) {
     };
     updateVolume();
 
-    function updateQuality() {
-        const options = qualityOptions[format.value];
-        quality.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
-        quality.value = selectedQuality[format.value];
-        quality.disabled = options.length === 1;
-    }
-    format.onchange = updateQuality;
-    quality.onchange = () => { selectedQuality[format.value] = quality.value; };
-    updateQuality();
 
     download.onclick = async () => {
         if (!filename || download.disabled) return;
-        const params = new URLSearchParams({ filename, format: format.value, quality: quality.value });
-        const targetName = filename.replace(/\.flac$/i, `.${format.value}`);
+        const settings = exportFields.values();
+        const params = new URLSearchParams({ filename, ...settings });
+        const targetName = filename.replace(/\.flac$/i, `.${settings.format}`);
         download.disabled = true;
         download.textContent = "Preparing…";
         showMessage();

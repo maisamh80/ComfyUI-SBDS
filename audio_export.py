@@ -18,8 +18,16 @@ EXPORTS = {
 }
 
 
+def audio_encoder(container, format_name, quality, rate, layout):
+    codec = {"wav": f"pcm_s{quality}le", "flac": "flac", "mp3": "libmp3lame", "opus": "libopus"}[format_name]
+    output = container.add_stream(codec, rate=rate)
+    output.layout = layout
+    if format_name in ("mp3", "opus"):
+        output.bit_rate = int(quality) * 1000
+    return output
+
+
 def encode_take(path, format_name, quality):
-    codec = {"wav": f"pcm_s{quality}le", "mp3": "libmp3lame", "opus": "libopus"}[format_name]
     buffer = BytesIO()
     with av.open(str(path), format="flac") as source:
         audio = source.streams.audio[0]
@@ -27,10 +35,7 @@ def encode_take(path, format_name, quality):
         if format_name == "opus" or (format_name == "mp3" and rate not in (32000, 44100, 48000)):
             rate = 48000
         with av.open(buffer, mode="w", format=format_name) as target:
-            output = target.add_stream(codec, rate=rate)
-            output.layout = audio.layout.name
-            if format_name in ("mp3", "opus"):
-                output.bit_rate = int(quality) * 1000
+            output = audio_encoder(target, format_name, quality, rate, audio.layout.name)
             for frame in source.decode(audio):
                 target.mux(output.encode(frame))
             target.mux(output.encode())

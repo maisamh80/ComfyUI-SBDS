@@ -1,5 +1,6 @@
 import mimetypes
 from io import BytesIO
+from itertools import chain
 from pathlib import Path
 import re
 from shutil import copyfileobj
@@ -12,12 +13,12 @@ import folder_paths
 import numpy as np
 from aiohttp import web
 
-from .audio_export import saved_take_path
+from .audio_export import EXPORTS, audio_encoder, saved_take_path
 from .projects import LOCK, open_project, read_catalog, write_json
 
 
 RATE = 48000
-MAX_TIME = 600
+MAX_TIME = 1200
 MAX_MEDIA = 64 * 1024 * 1024
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".aiff"}
 COLORS = ("mint", "blue", "lilac", "rose", "amber", "cyan", "orange", "slate")
@@ -87,7 +88,7 @@ def validate_timeline(data):
             start = field(clip.get("start"), 0, MAX_TIME)
             duration = field(clip.get("duration"), 0.01, MAX_TIME)
             if start + duration > MAX_TIME + 0.000001:
-                raise ValueError("The timeline can be up to 10 minutes long.")
+                raise ValueError("The timeline can be up to 20 minutes long.")
             refs = clip.get("refs", [])
             if not isinstance(refs, list) or len(refs) > 2:
                 raise ValueError("Choose up to two voice references.")
@@ -150,7 +151,7 @@ def audio_duration(source):
     except av.error.FFmpegError as error:
         raise ValueError("This audio file could not be read.") from error
     if not 0 < duration <= MAX_TIME + 1:
-        raise ValueError("Choose audio between zero and ten minutes long.")
+        raise ValueError("Choose audio between zero and twenty minutes long.")
     return duration
 
 
@@ -237,12 +238,11 @@ def import_media(index, project_id, filename, data):
     )
 
 
-def read_audio(path, skip, limit):
-    chunks = []
+def iter_audio(path, skip, limit):
     with av.open(str(path)) as container:
         convert = av.AudioResampler(format="fltp", layout="stereo", rate=RATE)
         stream = container.streams.audio[0]
-        for frame in container.decode(stream):
+        for frame in chain(container.decode(stream), (None,)):
             for output in convert.resample(frame):
                 samples = output.to_ndarray().T
                 if skip >= len(samples):
@@ -250,16 +250,14 @@ def read_audio(path, skip, limit):
                     continue
                 samples = samples[skip:skip + limit]
                 skip = 0
-                chunks.append(samples)
+                yield samples
                 limit -= len(samples)
                 if not limit:
-                    return np.concatenate(chunks)
-        for output in convert.resample(None):
-            samples = output.to_ndarray().T
-            if skip < len(samples):
-                chunks.append(samples[skip:skip + limit])
-                break
-            skip -= len(samples)
+                    return
+
+
+def read_audio(path, skip, limit):
+    chunks = list(iter_audio(path, skip, limit))
     return np.concatenate(chunks) if chunks else np.empty((0, 2), dtype=np.float32)
 
 
@@ -332,22 +330,45 @@ def mix_track(track, assets, media, frames, destination):
         if not item:
             raise ValueError(f'Missing audio for “{clip["name"]}”. Remove that clip before exporting.')
         length = round(clip["duration"] * RATE)
-        audio = read_audio(studio_asset_path(assets, item), round(clip["offset"] * RATE), length)
         start = round(clip["start"] * RATE)
-        audio = audio[:max(0, frames - start)].copy()
-        audio *= 10 ** (clip["gain"] / 20)
+        limit = min(length, frames - start)
+        if limit <= 0:
+            continue
+        gain = 10 ** (clip["gain"] / 20)
         fade_in = round(clip["fadeIn"] * RATE)
         fade_out = round(clip["fadeOut"] * RATE)
-        if fade_in:
-            fade = min(len(audio), fade_in)
-            audio[:fade] *= (np.arange(fade, dtype=np.float32) / fade_in)[:, None]
-        if fade_out:
-            first = min(len(audio), max(0, length - fade_out))
-            audio[first:] *= ((length - np.arange(first, len(audio), dtype=np.float32)) / fade_out)[:, None]
-        destination[start:start + len(audio)] += audio
+        offset = round(clip["offset"] * RATE)
+        cursor = 0
+        for audio in iter_audio(studio_asset_path(assets, item), offset, limit):
+            end = cursor + len(audio)
+            audio *= gain
+            if fade_in and cursor < fade_in:
+                audio *= np.minimum(1, np.arange(cursor, end, dtype=np.float32) / fade_in)[:, None]
+            if fade_out and end > length - fade_out:
+                audio *= np.minimum(1, (length - np.arange(cursor, end, dtype=np.float32)) / fade_out)[:, None]
+            destination[start + cursor:start + end] += audio
+            cursor = end
 
 
-def render_export(index, project_id, data, stems):
+def write_mix(path, samples, format_name, quality):
+    if format_name == "wav" and quality == "16":
+        write_wav(path, samples)
+        return
+    with av.open(str(path), "w", format=format_name) as container:
+        output = audio_encoder(container, format_name, quality, RATE, "stereo")
+        for start in range(0, len(samples), RATE):
+            chunk = np.ascontiguousarray(np.clip(samples[start:start + RATE], -1, 1).T)
+            frame = av.AudioFrame.from_ndarray(chunk, format="fltp", layout="stereo")
+            frame.sample_rate = RATE
+            for packet in output.encode(frame):
+                container.mux(packet)
+        for packet in output.encode():
+            container.mux(packet)
+
+
+def render_export(index, project_id, data, stems, format_name="wav", quality="16"):
+    if format_name not in EXPORTS or quality not in EXPORTS[format_name][1]:
+        raise ValueError("Choose a supported audio format and quality.")
     root = project_root(index, project_id)
     timeline = validate_timeline(data)
     assets, media = media_catalog(root)
@@ -361,11 +382,11 @@ def render_export(index, project_id, data, stems):
     samples = np.zeros((frames, 2), dtype=np.float32)
     exports = child_folder(root, "exports")
     stamp = uuid4().hex[:8]
-    output = exports / (f"Stems-{stamp}.zip" if stems else f"Mixdown-{stamp}.wav")
+    output = exports / (f"Stems-{stamp}.zip" if stems else f"Mixdown-{stamp}.{format_name}")
     try:
         if stems:
             cache = child_folder(root, "cache")
-            temporary = cache / f"stem-{stamp}.wav"
+            temporary = cache / f"stem-{stamp}.{format_name}"
             try:
                 with ZipFile(output, "x") as archive:
                     for number, track in enumerate(audible, 1):
@@ -373,15 +394,15 @@ def render_export(index, project_id, data, stems):
                             continue
                         samples.fill(0)
                         mix_track(track, assets, media, frames, samples)
-                        write_wav(temporary, samples)
+                        write_mix(temporary, samples, format_name, quality)
                         name = "".join(c if c.isalnum() or c in " _-" else "_" for c in track["name"])
-                        archive.write(temporary, f"{number:02d}-{name or 'Track'}.wav")
+                        archive.write(temporary, f"{number:02d}-{name or 'Track'}.{format_name}")
             finally:
                 temporary.unlink(missing_ok=True)
         else:
             for track in audible:
                 mix_track(track, assets, media, frames, samples)
-            write_wav(output, samples)
+            write_mix(output, samples, format_name, quality)
     except Exception:
         output.unlink(missing_ok=True)
         raise
@@ -436,6 +457,14 @@ def register_studio_routes(routes, catalog_for, run, payload):
 
     @routes.post(base + "/export")
     async def export(request):
-        path = await run(render_export, catalog_for(request), request.match_info["id"], await payload(request),
-                         request.query.get("mode") == "stems")
-        return web.FileResponse(path, headers={"Content-Disposition": f'attachment; filename="{path.name}"'})
+        stems = request.query.get("mode") == "stems"
+        format_name = request.query.get("format", "wav")
+        quality = request.query.get("quality", "16")
+        try:
+            path = await run(render_export, catalog_for(request), request.match_info["id"], await payload(request),
+                             stems, format_name, quality)
+        except av.error.FFmpegError as error:
+            raise web.HTTPUnprocessableEntity(text="ComfyUI could not encode the selected audio format.") from error
+        content_type = "application/zip" if stems else EXPORTS[format_name][0]
+        return web.FileResponse(path, headers={"Content-Disposition": f'attachment; filename="{path.name}"',
+                                               "Content-Type": content_type})

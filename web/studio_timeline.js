@@ -1,27 +1,26 @@
 import { compilePrompt, planTake, queueStudioTake, referenceSetup, studioGraph } from "./studio_generation.js";
 import { createTimelinePlayback } from "./timeline_playback.js";
+import { audioExportFields, bindAudioExportFields } from "./audio.js";
+import { bindCueEditor, cueEditorView } from "./cue_editor.js";
 
 const transportIcon = name => new URL(`./artwork/${name}.svg`, import.meta.url).href;
 
 const colors = ["mint", "blue", "lilac", "rose", "amber", "cyan", "orange", "slate"];
 const kinds = { dialogue: "Dialogue", music: "Music", sfx: "Sound Effects" };
-const timeLimit = 600;
-const tags = {
-    Language: ["lang:English", "lang:Persian", "lang:Spanish", "lang:French", "lang:Chinese", "lang:Japanese", "lang:Korean", "lang:Arabic", "lang:Portuguese", "lang:Russian"],
-    Emotion: ["emotion:happy", "emotion:sad", "emotion:angry", "emotion:scared", "emotion:surprised", "emotion:calm"],
-    Delivery: ["style:whispered", "style:shouted", "style:sung", "prosody:slowly", "prosody:quickly"],
-    "Vocal effects": ["sfx:laugh", "sfx:cough", "sfx:sigh", "sfx:sneeze", "sfx:cry"],
-    Timing: ["pause:0.5s", "pause:1s", "pause:3s"],
-};
+const timeLimit = 1200;
+const rulerIntervals = [1, 2, 5, 10, 15, 30, 60, 120, 300];
 
 export const studioView = `
     <div class="sbds-project-heading">
         <div><p class="sbds-label">STUDIO</p><h1 data-active-project>Studio</h1>
             <p data-active-project-description>Open a project to start working in Studio.</p></div>
-        <div class="sbds-actions" data-studio-tools hidden>
-            <label class="sbds-studio-fps">Project FPS<input type="number" data-studio-fps min="1" max="120" step="1"></label>
-            <button type="button" class="sbds-primary" data-studio-mix>Export Mix</button>
-            <button type="button" class="sbds-primary" data-studio-stems>Export Multi Track</button>
+        <div data-studio-tools hidden>
+            <div class="sbds-actions">
+                <label class="sbds-studio-fps">Project FPS<input type="number" data-studio-fps min="1" max="120" step="1"></label>
+                <button type="button" class="sbds-primary" data-studio-mix>Export Mix</button>
+                <button type="button" class="sbds-primary" data-studio-stems>Export Multi Track</button>
+            </div>
+            <div class="sbds-export" role="group" aria-label="Studio audio export">${audioExportFields}</div>
         </div>
     </div>
     <p data-studio-status class="sbds-project-status" role="status" hidden></p>
@@ -38,7 +37,7 @@ export const studioView = `
                 <button type="button" class="sbds-icon-button" data-studio-play aria-label="Play timeline" title="Play timeline (Space)">
                     <img src="${transportIcon("play")}" alt="">
                 </button>
-                <label>Zoom <input type="range" data-studio-zoom min="18" max="144" step="6" value="48"></label>
+                <input type="range" data-studio-zoom aria-label="Timeline zoom" title="Timeline zoom" min="0" max="100" step="1" value="50">
             </div>
             <button type="button" class="sbds-primary" data-studio-generate-all>Generate All</button>
         </div>
@@ -61,14 +60,11 @@ export const studioView = `
                     <label>Fade out (s)<input type="number" data-clip="fadeOut" min="0" step="any"></label>
                 </div>
                 <div data-generation-editor hidden>
-                    <label>Prompt<textarea data-clip="prompt" rows="3" maxlength="16000"></textarea></label>
+                    ${cueEditorView}
                     <div data-studio-dialogue>
                         <div class="sbds-fields">
                             <label>Speaker 1 reference<select data-reference="0"></select></label>
                             <label>Speaker 2 reference<select data-reference="1"></select></label>
-                            <label>Insert a cue<select data-insert-cue><option value="">Choose a cue…</option>
-                                ${Object.entries(tags).map(([group, list]) => `<optgroup label="${group}">${list.map(tag => `<option value="[${tag}]">${tag.split(":")[1]}</option>`).join("")}</optgroup>`).join("")}
-                            </select></label>
                         </div>
                         <p class="sbds-project-hint">For two voices, label lines Speaker 1 and Speaker 2. A cue such as [pause:3s] inserts silence.</p>
                     </div>
@@ -130,6 +126,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     const tools = get("[data-studio-tools]");
     const status = get("[data-studio-status]");
     const timeline = get("[data-timeline]");
+    const timelineScroll = get("[data-timeline-scroll]");
+    const exportFields = bindAudioExportFields(tools);
+    const cueEditor = bindCueEditor(section);
     const inspector = get("[data-clip-inspector]");
     const colorPalette = get("[data-color-palette]");
     const finalPrompt = get(".sbds-studio-prompt");
@@ -143,6 +142,8 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     let selected;
     let regenerateClip;
     let playhead = 0;
+    let scale = 48;
+    let rulerLength = 24;
     let playheadHandle;
     let running = false;
     let playbackTicket = 0;
@@ -198,7 +199,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     function setPlayhead(value) {
         playhead = clamp(value, 0, timeLimit);
         get("[data-studio-time]").textContent = timecode(playhead);
-        timeline.style.setProperty("--playhead", `${playhead * Number(zoom.value)}px`);
+        timeline.style.setProperty("--playhead", `${playhead * scale}px`);
         if (playheadHandle) {
             playheadHandle.setAttribute("aria-valuenow", String(Number(playhead.toFixed(3))));
             playheadHandle.setAttribute("aria-valuetext", timecode(playhead));
@@ -320,7 +321,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     }
 
     function drawClip(node, clip) {
-        const scale = Number(zoom.value);
         node.style.left = `${clip.start * scale}px`;
         node.style.width = `${clip.duration * scale}px`;
         node.style.setProperty("--fade-in", `${100 * clip.fadeIn / clip.duration}%`);
@@ -338,10 +338,10 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const original = { ...clip };
         const startX = event.clientX;
         const startY = event.clientY;
-        const scale = Number(zoom.value);
+        const dragScale = scale;
         node.setPointerCapture(event.pointerId);
         const move = event => {
-            const seconds = (event.clientX - startX) / scale;
+            const seconds = (event.clientX - startX) / dragScale;
             if (handle === "move") clip.start = clamp(snap(original.start + seconds), 0, timeLimit - original.duration);
             if (handle === "left") {
                 const max = original.start + original.duration - 0.04;
@@ -405,6 +405,24 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         return button;
     }
 
+    function timelineViewport() {
+        const header = parseFloat(getComputedStyle(timeline).getPropertyValue("--track-header")) || 146;
+        return Math.max(1, timelineScroll.clientWidth - header);
+    }
+
+    function jumpTo(time) {
+        const resume = running;
+        stopPlayback();
+        setPlayhead(clamp(time, 0, rulerLength));
+        const position = playhead * scale;
+        const visibleStart = timelineScroll.scrollLeft;
+        const visibleWidth = timelineViewport();
+        if (position < visibleStart || position > visibleStart + visibleWidth - 8) {
+            timelineScroll.scrollLeft = Math.max(0, position - visibleWidth / 2);
+        }
+        if (resume && playhead < endTime()) void play.onclick();
+    }
+
     function render() {
         if (!active?.timeline) return;
         if (colorPalette.matches(":popover-open")) colorPalette.hidePopover();
@@ -412,15 +430,23 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const fpsInput = get("[data-studio-fps]");
         fpsInput.value = active.project.fps;
         fpsInput.disabled = busy;
-        const scale = Number(zoom.value);
-        const length = Math.min(timeLimit, Math.max(24, Math.ceil((Math.max(endTime(), playhead) + 4) / 4) * 4));
+        exportFields.disable(busy);
+        const width = timelineViewport();
+        const contentLength = Math.min(timeLimit, Math.max(endTime(), playhead) + 4);
+        const minimumScale = width / Math.max(180, contentLength);
+        const zoomValue = Number(zoom.value);
+        scale = zoomValue <= 50
+            ? minimumScale * (48 / minimumScale) ** (zoomValue / 50)
+            : 48 * 3 ** ((zoomValue - 50) / 50);
+        rulerLength = Math.min(timeLimit, Math.max(24, Math.ceil(contentLength), Math.ceil(width / scale)));
+        const length = rulerLength;
+        const interval = rulerIntervals.find(step => step * scale >= 50) ?? rulerIntervals.at(-1);
         timeline.style.setProperty("--timeline-width", `${length * scale}px`);
-        timeline.style.setProperty("--tick", `${scale}px`);
+        timeline.style.setProperty("--tick", `${interval * scale}px`);
         timeline.replaceChildren();
         const ruler = element("div", "sbds-track-row sbds-ruler");
         ruler.append(element("div", "sbds-track-controls", "Tracks"));
         const marks = element("div", "sbds-track-lane");
-        const interval = scale < 30 ? 4 : scale < 55 ? 2 : 1;
         for (let second = 0; second < length; second += interval) {
             const label = element("span", "sbds-time-label", timecode(second));
             label.style.left = `${second * scale}px`;
@@ -467,15 +493,11 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             if (resumeAfterScrub && playhead < endTime()) void play.onclick();
         };
         playheadHandle.onkeydown = event => {
-            const step = 1 / (active.project.fps || 24);
-            const positions = { ArrowLeft: playhead - step, ArrowRight: playhead + step, Home: 0, End: length };
-            if (!(event.key in positions)) return;
+            const positions = { ArrowLeft: playhead - 1, ArrowRight: playhead + 1, Home: 0, End: length };
+            if (!(event.key in positions) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
             event.preventDefault();
             event.stopPropagation();
-            const resume = running;
-            stopPlayback();
-            setPlayhead(clamp(snap(positions[event.key]), 0, length));
-            if (resume && playhead < endTime()) void play.onclick();
+            jumpTo(positions[event.key]);
         };
         ruler.append(marks);
         timeline.append(ruler);
@@ -553,15 +575,20 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const { track, clip } = findSelected();
         inspector.hidden = inspectorScroll.hidden = !clip;
         inspector.disabled = busy;
-        if (!clip) return;
+        if (!clip) { cueEditor.close(); return; }
         const state = clipStatus(clip);
         const editGeneration = state === "pending" || (state === "generated" && regenerateClip === clip.id);
         get("[data-generation-editor]").hidden = !editGeneration;
         get("[data-studio-generate]").hidden = !editGeneration;
         get("[data-studio-final-prompt]").hidden = !editGeneration;
         get("[data-studio-regenerate]").hidden = state !== "generated" || editGeneration;
-        for (const input of inspector.querySelectorAll("[data-clip]")) input.value = clip[input.dataset.clip];
+        for (const input of inspector.querySelectorAll("[data-clip]")) {
+            const value = String(clip[input.dataset.clip]);
+            if (input.value !== value) input.value = value;
+        }
+        if (!editGeneration || busy) cueEditor.close();
         if (!editGeneration) return;
+        cueEditor.show(track.kind === "dialogue");
         get("[data-studio-dialogue]").hidden = track.kind !== "dialogue";
         const options = generationOptions();
         for (const input of inspector.querySelectorAll("[data-generation]")) {
@@ -606,15 +633,6 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const { clip } = findSelected();
         if (clip) { clip.prompt = event.target.value; changed(); }
     };
-    get("[data-insert-cue]").onchange = event => {
-        if (!event.target.value) return;
-        const prompt = get('[data-clip="prompt"]');
-        prompt.setRangeText(`${event.target.value} `, prompt.selectionStart, prompt.selectionEnd, "end");
-        prompt.dispatchEvent(new Event("input"));
-        event.target.value = "";
-        prompt.focus();
-    };
-
     get("[data-studio-track]").onclick = () => {
         if (active.timeline.tracks.length >= 24) { message("A project can have up to 24 tracks.", true); return; }
         const track = newTrack(get("[data-new-track-type]").value);
@@ -638,7 +656,17 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         changed();
         select(track);
     };
-    zoom.oninput = render;
+    zoom.oninput = () => {
+        render();
+        timelineScroll.scrollLeft = Math.max(0, playhead * scale - timelineViewport() / 2);
+    };
+    let viewportWidth;
+    new ResizeObserver(() => {
+        const width = timelineScroll.clientWidth;
+        if (!width || width === viewportWidth) return;
+        viewportWidth = width;
+        render();
+    }).observe(timelineScroll);
     play.onclick = async () => {
         if (running) { stopPlayback(); return; }
         const session = active;
@@ -658,13 +686,16 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
 
     const dialog = section.closest("dialog");
     dialog?.addEventListener("keydown", event => {
-        if (event.code !== "Space" || event.defaultPrevented || section.hidden || body.hidden
+        const arrow = event.key === "ArrowLeft" || event.key === "ArrowRight";
+        if ((!arrow && event.code !== "Space") || event.defaultPrevented || section.hidden || body.hidden
             || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         const target = event.target;
-        if (target.closest("dialog") !== dialog || target.closest("input, textarea, select, button, a, summary, [contenteditable]")) return;
+        if (target.closest("dialog") !== dialog || target.closest("input, textarea, select, [contenteditable], [data-cue-bar]")) return;
+        if (!arrow && target.closest("button, a, summary")) return;
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) void play.onclick();
+        if (arrow) jumpTo(playhead + (event.key === "ArrowLeft" ? -1 : 1));
+        else if (!event.repeat) void play.onclick();
     });
 
     get("[data-studio-import]").onclick = () => file.click();
@@ -706,11 +737,13 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
 
     async function exportAudio(mode) {
         const session = active;
-        busy = true; render(); message(mode === "stems" ? "Rendering track stems…" : "Rendering mixdown…");
+        const settings = exportFields.values();
+        busy = true; render(); message(mode === "stems" ? "Rendering separate tracks…" : "Rendering mixdown…");
         try {
             await flush(session);
-            const response = await service(session, `/export?mode=${mode}`, session.timeline);
-            const filename = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || (mode === "stems" ? "Stems.zip" : "Mixdown.wav");
+            const query = new URLSearchParams({ mode, ...settings });
+            const response = await service(session, `/export?${query}`, session.timeline);
+            const filename = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || (mode === "stems" ? "Stems.zip" : `Mixdown.${settings.format}`);
             const url = URL.createObjectURL(await response.blob());
             const link = element("a");
             link.href = url;
