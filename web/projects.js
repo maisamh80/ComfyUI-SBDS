@@ -105,6 +105,14 @@ function readThumbnail(file) {
     });
 }
 
+export function listLibraryProjects(api) {
+    return projectRequest(api);
+}
+
+export function saveProjectSound(api, projectId, name, filename) {
+    return projectRequest(api, "/" + encodeURIComponent(projectId) + "/library", "POST", { name, filename });
+}
+
 export function createProjectLibrary(section, api, onOpen, onRemove) {
     const get = (selector) => section.querySelector(selector);
     const grid = get(".sbds-project-grid");

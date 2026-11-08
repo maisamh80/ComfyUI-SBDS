@@ -270,7 +270,8 @@
 .sbds .sbds-export [data-format] { min-width: 76px; }
 .sbds .sbds-export [data-quality] { min-width: 109px; }
 .sbds .sbds-export [data-download] { color: var(--mint); }
-.sbds .sbds-audio-status { margin: 8px 0 0; color: #f3bfab; }
+.sbds .sbds-audio-status { margin: 8px 0 0; color: var(--mint); }
+.sbds .sbds-audio-status[data-error="true"] { color: #f3bfab; }
 .sbds [hidden] { display: none; }
 .sbds .sbds-progress { display: flex; align-items: center; gap: 12px; min-height: 18px; margin-top: 4px; }
 .sbds [data-elapsed] { flex: none; color: #b9c4c4; font-size: 12px; font-variant-numeric: tabular-nums; }

@@ -8,13 +8,17 @@ import json
 import os
 from pathlib import Path
 from secrets import choice
+from shutil import copyfileobj
 import tempfile
 from threading import Lock
+import unicodedata
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from aiohttp import web
 from PIL import Image, ImageOps, UnidentifiedImageError
+
+from .audio_export import saved_take_path
 
 
 MANIFEST = "project.json"
@@ -22,6 +26,10 @@ FOLDERS = ("assets", "cache", "prompts", "exports")
 THUMBNAIL = Path("cache") / "thumbnail.jpg"
 PRESETS = Path(__file__).parent / "web" / "artwork" / "projects"
 LOCK = Lock()
+
+
+class DuplicateLibraryName(ValueError):
+    pass
 
 
 def write_json(path, data):
@@ -204,6 +212,50 @@ def thumbnail_path(index, project_id):
     return image
 
 
+def library_key(name):
+    return unicodedata.normalize("NFKC", name).casefold()
+
+
+def add_library_sound(index, project_id, data):
+    name = data.get("name")
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+        raise ValueError("Enter a sound name between 1 and 80 characters.")
+    name = name.strip()
+    if any(unicodedata.category(character) == "Cc" for character in name):
+        raise ValueError("Use a single line for the sound name.")
+    key = library_key(name)
+    with LOCK:
+        root = Path(open_project(index, project_id)["path"])
+        assets = root / "assets"
+        if assets.resolve() != assets or not assets.is_dir():
+            raise ValueError("This project needs its original assets folder.")
+        library_path = assets / "library.json"
+        if library_path.is_symlink():
+            raise ValueError("The project library file must be inside the assets folder.")
+        library = read_catalog(library_path)
+        if key in library:
+            raise DuplicateLibraryName("This name is already in the project library. Choose a different name.")
+        try:
+            source = saved_take_path(data.get("filename"))
+        except FileNotFoundError as error:
+            raise ValueError(str(error)) from error
+        sound_id = uuid4().hex
+        entry = {"id": sound_id, "name": name, "file": f"{sound_id}.flac"}
+        target = assets / entry["file"]
+        created = False
+        try:
+            with source.open("rb") as original, target.open("xb") as copy:
+                created = True
+                copyfileobj(original, copy)
+            library[key] = entry
+            write_json(library_path, library)
+        except Exception:
+            if created:
+                target.unlink(missing_ok=True)
+            raise
+    return entry
+
+
 def register_project_routes(server):
     routes = server.routes
 
@@ -233,6 +285,8 @@ def register_project_routes(server):
     async def run(operation, *args):
         try:
             return await asyncio.to_thread(operation, *args)
+        except DuplicateLibraryName as error:
+            raise web.HTTPConflict(text=str(error)) from error
         except FileExistsError as error:
             raise web.HTTPConflict(text="A folder with that name already exists at this location.") from error
         except FileNotFoundError as error:
@@ -278,6 +332,12 @@ def register_project_routes(server):
     async def delete_card(request):
         await run(remove_project, catalog_for(request), request.match_info["id"])
         return web.Response(status=204)
+
+    @routes.post("/sbds/projects/{id}/library")
+    async def save_sound(request):
+        index = catalog_for(request)
+        entry = await run(add_library_sound, index, request.match_info["id"], await payload(request))
+        return web.json_response(entry, status=201)
 
     @routes.get("/sbds/projects/{id}/thumbnail")
     async def thumbnail(request):

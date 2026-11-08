@@ -257,7 +257,6 @@ function createStudio() {
     const status = footer.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
     const elapsed = dialog.querySelector("[data-elapsed]");
-    const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api);
     const takes = dialog.querySelector("[data-take]");
     const promptButton = form.querySelector('[data-action="prompt"]');
     const promptEditor = dialog.querySelector(".sbds-prompt-editor");
@@ -271,6 +270,7 @@ function createStudio() {
     let purging = false;
     let purgeFeedback;
     let activeProject;
+    const showTake = createTakeControls(dialog.querySelector("[data-latest-take]"), api, () => activeProject);
 
     function setProject(project) {
         activeProject = project;

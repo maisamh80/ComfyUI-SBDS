@@ -37,20 +37,29 @@ def encode_take(path, format_name, quality):
     return buffer.getvalue()
 
 
-async def export_audio(request):
-    filename = request.query.get("filename", "")
-    format_name = request.query.get("format", "")
-    quality = request.query.get("quality", "")
-    if not TAKE_NAME.fullmatch(filename):
-        raise web.HTTPBadRequest(text="Choose a saved SBDS take.")
-    if format_name not in EXPORTS or quality not in EXPORTS[format_name][1]:
-        raise web.HTTPBadRequest(text="Choose a supported format and quality.")
-
+def saved_take_path(filename):
+    if not isinstance(filename, str) or not TAKE_NAME.fullmatch(filename):
+        raise ValueError("Choose a saved SBDS take.")
     output_dir = Path(folder_paths.get_output_directory()).resolve()
     take_dir = output_dir / "audio" / "SBDS"
     path = (take_dir / filename).resolve()
     if path.parent != take_dir or not path.is_file():
-        raise web.HTTPNotFound(text="The original SBDS take is no longer available.")
+        raise FileNotFoundError("The original SBDS take is no longer available.")
+    return path
+
+
+async def export_audio(request):
+    filename = request.query.get("filename", "")
+    format_name = request.query.get("format", "")
+    quality = request.query.get("quality", "")
+    if format_name not in EXPORTS or quality not in EXPORTS[format_name][1]:
+        raise web.HTTPBadRequest(text="Choose a supported format and quality.")
+    try:
+        path = saved_take_path(filename)
+    except ValueError as error:
+        raise web.HTTPBadRequest(text=str(error)) from error
+    except FileNotFoundError as error:
+        raise web.HTTPNotFound(text=str(error)) from error
 
     headers = {
         "Content-Disposition": f'attachment; filename="{path.stem}.{format_name}"',

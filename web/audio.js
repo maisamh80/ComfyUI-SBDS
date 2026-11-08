@@ -1,3 +1,5 @@
+import { listLibraryProjects, saveProjectSound } from "./projects.js";
+
 const speakerIcon = '<path d="M3 7h3l4-3v12l-4-3H3z" fill="currentColor"/>';
 
 export const latestTakeControls = `
@@ -31,10 +33,25 @@ export const latestTakeControls = `
                 </select>
             </label>
             <label>Quality<select data-quality></select></label>
+            <button type="button" data-add-library>Add to Library</button>
             <button type="button" data-download>Download</button>
         </div>
     </div>
     <p class="sbds-audio-status" role="status" hidden></p>
+    <dialog class="sbds-project-editor" data-library-editor aria-label="Add to Library">
+        <form>
+            <h2>Add to Library</h2>
+            <p data-library-project></p>
+            <label data-library-chooser hidden>Project<select name="project" required disabled></select></label>
+            <label>Sound name<input name="name" required maxlength="80" autofocus></label>
+            <p class="sbds-project-hint">Use this name to find the sound later in Studio.</p>
+            <p class="sbds-project-status" data-library-error data-error="true" role="status" hidden></p>
+            <div class="sbds-actions">
+                <button type="submit" class="sbds-primary">Save</button>
+                <button type="button" data-library-cancel>Cancel</button>
+            </div>
+        </form>
+    </dialog>
 `;
 
 const qualityOptions = {
@@ -50,7 +67,7 @@ function formatTime(seconds) {
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-export function createTakeControls(section, api) {
+export function createTakeControls(section, api, getProject) {
     const row = section.querySelector(".sbds-audio-row");
     const audio = row.querySelector("audio");
     const play = row.querySelector("[data-play]");
@@ -61,14 +78,88 @@ export function createTakeControls(section, api) {
     const format = row.querySelector("[data-format]");
     const quality = row.querySelector("[data-quality]");
     const download = row.querySelector("[data-download]");
+    const addToLibrary = row.querySelector("[data-add-library]");
     const status = section.querySelector(".sbds-audio-status");
+    const libraryEditor = section.querySelector("[data-library-editor]");
+    const libraryForm = libraryEditor.querySelector("form");
+    const libraryProject = libraryForm.querySelector("[data-library-project]");
+    const projectChooser = libraryForm.querySelector("[data-library-chooser]");
+    const projectSelect = libraryForm.elements.project;
+    const libraryName = libraryForm.elements.name;
+    const libraryError = libraryForm.querySelector("[data-library-error]");
+    const save = libraryForm.querySelector('button[type="submit"]');
+    const cancel = libraryForm.querySelector("[data-library-cancel]");
     const selectedQuality = { ...defaultQuality };
     let filename;
+    let libraryTake;
+    let libraryProjectId;
+    let libraryRequest = 0;
 
-    function showMessage(message = "") {
+    function showMessage(message = "", error = true) {
         status.textContent = message;
         status.hidden = !message;
+        status.dataset.error = String(error);
     }
+
+    function setLibraryError(message = "") {
+        libraryError.textContent = message;
+        libraryError.hidden = !message;
+    }
+
+    addToLibrary.onclick = async () => {
+        if (!filename) return;
+        const ticket = ++libraryRequest;
+        const project = getProject();
+        libraryTake = filename;
+        libraryProjectId = project?.id;
+        libraryForm.reset();
+        setLibraryError();
+        projectChooser.hidden = Boolean(project);
+        projectSelect.disabled = true;
+        projectSelect.replaceChildren(new Option("Select a project…", ""));
+        libraryProject.textContent = project ? `Project: ${project.name}` : "Loading projects…";
+        save.disabled = !project;
+        libraryEditor.showModal();
+        if (project) return;
+
+        try {
+            const projects = await listLibraryProjects(api);
+            if (ticket !== libraryRequest || !libraryEditor.open) return;
+            libraryProject.textContent = projects.length ? "" : "Create or import a project first.";
+            if (!projects.length) return;
+            for (const item of projects) projectSelect.add(new Option(item.name, item.id));
+            projectSelect.disabled = false;
+            projectSelect.focus();
+        } catch (error) {
+            if (ticket === libraryRequest && libraryEditor.open) {
+                libraryProject.textContent = "";
+                setLibraryError(error.message);
+            }
+        }
+    };
+    projectSelect.onchange = () => { save.disabled = !projectSelect.value; };
+    cancel.onclick = () => libraryEditor.close();
+    libraryEditor.addEventListener("cancel", event => { if (cancel.disabled) event.preventDefault(); });
+    libraryForm.onsubmit = async (event) => {
+        event.preventDefault();
+        if (save.disabled) return;
+        const projectId = libraryProjectId || projectSelect.value;
+        save.disabled = cancel.disabled = true;
+        projectSelect.disabled = true;
+        setLibraryError();
+        try {
+            const sound = await saveProjectSound(api, projectId, libraryName.value, libraryTake);
+            libraryEditor.close();
+            showMessage(`Added “${sound.name}” to the project library.`, false);
+        } catch (error) {
+            setLibraryError(error.message);
+            libraryName.focus();
+            libraryName.select();
+        } finally {
+            save.disabled = cancel.disabled = false;
+            projectSelect.disabled = Boolean(libraryProjectId);
+        }
+    };
 
     function updatePlay() {
         const playing = !audio.paused && !audio.ended;
