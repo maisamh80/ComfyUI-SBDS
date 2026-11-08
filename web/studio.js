@@ -221,6 +221,7 @@ function createStudio() {
         <footer data-view="identity" hidden>
             <span role="status">Loading ComfyUI model lists…</span>
             <div class="sbds-progress">
+                <span class="sbds-current-project" data-current-project hidden>Working on <bdi></bdi></span>
                 <progress max="1" value="0" aria-label="Generation progress"></progress>
                 <span data-elapsed hidden></span>
             </div>
@@ -256,6 +257,7 @@ function createStudio() {
     const footer = dialog.querySelector("footer");
     const status = footer.querySelector('[role="status"]');
     const progress = dialog.querySelector("progress");
+    const currentProject = footer.querySelector("[data-current-project]");
     const elapsed = dialog.querySelector("[data-elapsed]");
     const takes = dialog.querySelector("[data-take]");
     const promptButton = form.querySelector('[data-action="prompt"]');
@@ -274,6 +276,9 @@ function createStudio() {
 
     function setProject(project) {
         activeProject = project;
+        currentProject.hidden = !project;
+        currentProject.querySelector("bdi").textContent = project?.name ?? "";
+        currentProject.title = project ? `Working on ${project.name}` : "";
         dialog.querySelector("[data-active-project]").textContent = project?.name ?? "Studio";
         dialog.querySelector("[data-active-project-description]").textContent = project
             ? [project.description, `${project.fps} FPS`].filter(Boolean).join(" · ")
