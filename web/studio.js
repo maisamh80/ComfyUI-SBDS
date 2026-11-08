@@ -12,6 +12,13 @@ const settingsLabels = {
     sampler: "Sampler", scheduler: "Scheduler",
 };
 let studio;
+const artwork = (name) => new URL(`./artwork/${name}.webp`, import.meta.url).href;
+const pages = [
+    ["projects", "Projects", "projects"],
+    ["identity", "Make Sound", "make-sound"],
+    ["studio", "Studio", "studio"],
+    ["settings", "Settings", "settings"],
+];
 
 const stylesheet = document.createElement("link");
 stylesheet.rel = "stylesheet";
@@ -61,7 +68,10 @@ function createStudio() {
     dialog.className = "sbds";
     dialog.innerHTML = `
         <header>
-            <div class="sbds-title"><span class="sbds-mark" aria-hidden="true">▣</span> <strong>Sound Band Design Studio</strong></div>
+            <div class="sbds-title">
+                <img src="${artwork("logo")}" alt="" width="54" height="36">
+                <strong>Sound Band Design Studio</strong>
+            </div>
             ${resourceMeters}
             <div class="sbds-actions">
                 <button type="button" data-action="purge" title="${purgeTitle}">Purge</button>
@@ -70,30 +80,20 @@ function createStudio() {
             </div>
         </header>
         <nav class="sbds-nav" aria-label="Studio navigation">
-            <button type="button" data-page="projects" aria-current="page" autofocus>
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5h5l1.5 2h8.5v8.5h-15z"/></svg>
-                Projects
-            </button>
-            <button type="button" data-page="identity">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10h2l2-5 3 10 3-10 2 5h3"/></svg>
-                Identity
-            </button>
-            <button type="button" data-page="studio">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/><rect x="5" y="3.5" width="6" height="3" rx="1"/><rect x="10" y="8.5" width="5" height="3" rx="1"/><rect x="6" y="13.5" width="8" height="3" rx="1"/></svg>
-                Studio
-            </button>
-            <button type="button" data-page="settings">
-                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3v14m6-14v14m6-14v14M2 7h4m2 6h4m2-7h4"/></svg>
-                Settings
-            </button>
+            ${pages.map(([page, label, icon]) => `
+                <button type="button" data-page="${page}" aria-label="${label}">
+                    <img src="${artwork(icon)}" alt="" width="128" height="128">
+                    <span class="sbds-nav-tip" aria-hidden="true">${label}</span>
+                </button>
+            `).join("")}
         </nav>
-        <main>
+        <main tabindex="-1" autofocus>
             <section class="sbds-empty-page" data-view="projects">
                 <h1>Projects</h1>
                 <p>Your saved projects will appear here.</p>
             </section>
             <section data-view="identity" hidden>
-                <p class="sbds-label">IDENTITY / TEXT TO AUDIO</p>
+                <p class="sbds-label">TTS IDENTITY / MUSIC / SFX</p>
                 <h1>Make a sound.</h1>
                 <p>Describe a character voice, musical cue, or sound effect for LTX.</p>
                 <form>
