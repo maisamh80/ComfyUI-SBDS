@@ -2,7 +2,7 @@
     --surface: #181c1e;
     --edge: #353e41;
     --mint: #b9ebca;
-    --nav-width: 108px;
+    --nav-width: 76px;
     --nav-icon-size: 44px;
     --page-inset: clamp(22px, 3.5vw, 40px);
     position: fixed;
@@ -50,13 +50,13 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 18px 12px;
-    overflow: auto;
+    padding: 18px 8px;
+    overflow: hidden auto;
+    scrollbar-width: thin;
     border-right: 1px solid var(--edge);
     background: #15191b;
 }
 .sbds .sbds-nav button {
-    position: relative;
     display: grid;
     flex: none;
     place-items: center;
@@ -75,9 +75,7 @@
 .sbds .sbds-nav-tip {
     position: absolute;
     z-index: 1;
-    top: calc(100% - 2px);
-    left: 50%;
-    transform: translateX(-50%);
+    transform: translateY(-50%);
     padding: 2px 5px;
     border: 1px solid var(--edge);
     border-radius: 5px;
@@ -85,12 +83,9 @@
     color: #eef3f2;
     font-size: 11px;
     white-space: nowrap;
-    visibility: hidden;
     pointer-events: none;
 }
-.sbds .sbds-nav button:is(:hover, :focus-visible) .sbds-nav-tip { visibility: visible; }
 .sbds .sbds-nav [data-page="settings"] { margin-top: auto; }
-.sbds .sbds-nav [data-page="settings"] .sbds-nav-tip { top: auto; bottom: calc(100% - 2px); }
 .sbds .sbds-empty-page { min-height: 180px; }
 .sbds section {
     min-width: 0;
@@ -101,7 +96,7 @@
 }
 .sbds .sbds-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sbds .sbds-title { position: relative; padding-left: 62px; margin-right: auto; }
-.sbds .sbds-title img { position: absolute; top: 50%; left: 0; transform: translateY(-50%); object-fit: contain; }
+.sbds .sbds-title img { position: absolute; top: 50%; left: -8px; transform: translateY(-50%); object-fit: contain; }
 .sbds .sbds-meters { display: flex; flex-wrap: wrap; gap: 5px; }
 .sbds .sbds-meter {
     --meter-color: #68b7ed;
@@ -258,15 +253,18 @@
 }
 .sbds .sbds-prompt-editor::backdrop { background: #0a0d10b8; }
 @media (max-width: 660px) {
-    .sbds { --nav-width: 82px; --nav-icon-size: 36px; --page-inset: 12px; }
+    .sbds { --nav-width: 58px; --nav-icon-size: 36px; --page-inset: 12px; }
     .sbds main { padding-block: 14px; }
-    .sbds .sbds-nav { padding: 12px 6px; }
+    .sbds .sbds-nav { padding: 12px 3px; }
     .sbds .sbds-title { padding-left: 40px; }
-    .sbds .sbds-title img { width: 32px; height: 22px; }
+    .sbds .sbds-title img { width: 38px; height: 26px; left: -6px; }
     .sbds header, .sbds footer { padding-inline: 12px; }
     .sbds .sbds-fields, .sbds .sbds-voice .sbds-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 480px) {
-    .sbds { --nav-width: 72px; --nav-icon-size: 30px; }
+    .sbds { --nav-width: 52px; --nav-icon-size: 30px; }
     .sbds .sbds-fields, .sbds .sbds-voice .sbds-fields { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-height: 520px) {
+    .sbds .sbds-nav { padding-inline: 0; }
 }

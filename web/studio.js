@@ -69,7 +69,7 @@ function createStudio() {
     dialog.innerHTML = `
         <header>
             <div class="sbds-title">
-                <img src="${artwork("logo")}" alt="" width="54" height="36">
+                <img src="${artwork("logo")}" alt="" width="62" height="42">
                 <strong>Sound Band Design Studio</strong>
             </div>
             ${resourceMeters}
@@ -83,10 +83,10 @@ function createStudio() {
             ${pages.map(([page, label, icon]) => `
                 <button type="button" data-page="${page}" aria-label="${label}">
                     <img src="${artwork(icon)}" alt="" width="128" height="128">
-                    <span class="sbds-nav-tip" aria-hidden="true">${label}</span>
                 </button>
             `).join("")}
         </nav>
+        <span class="sbds-nav-tip" aria-hidden="true" hidden></span>
         <main tabindex="-1" autofocus>
             <section class="sbds-empty-page" data-view="projects">
                 <h1>Projects</h1>
@@ -246,6 +246,7 @@ function createStudio() {
     const refresh = dialog.querySelector('[data-action="refresh"]');
     const expand = dialog.querySelector('[data-action="expand"]');
     const navigation = [...dialog.querySelectorAll("[data-page]")];
+    const navTip = dialog.querySelector(".sbds-nav-tip");
     const views = dialog.querySelectorAll("[data-view]");
     const main = dialog.querySelector("main");
     const purgeButton = dialog.querySelector('[data-action="purge"]');
@@ -271,6 +272,7 @@ function createStudio() {
     let purgeFeedback;
 
     function openPage(page) {
+        navTip.hidden = true;
         for (const view of views) view.hidden = view.dataset.view !== page;
         for (const button of navigation) {
             if (button.dataset.page === page) button.setAttribute("aria-current", "page");
@@ -279,7 +281,29 @@ function createStudio() {
         main.scrollTop = 0;
     }
 
-    for (const button of navigation) button.onclick = () => openPage(button.dataset.page);
+    function showNavTip(button) {
+        const icon = button.getBoundingClientRect();
+        const panel = dialog.getBoundingClientRect();
+        navTip.textContent = button.getAttribute("aria-label");
+        navTip.style.left = `${icon.right - panel.left - dialog.clientLeft + 8}px`;
+        navTip.style.top = `${icon.top - panel.top - dialog.clientTop + icon.height / 2}px`;
+        navTip.hidden = false;
+    }
+
+    function hideNavTip() {
+        navTip.hidden = true;
+    }
+
+    for (const button of navigation) {
+        button.onclick = () => openPage(button.dataset.page);
+        button.addEventListener("pointerenter", () => showNavTip(button));
+        button.addEventListener("pointerleave", hideNavTip);
+        button.addEventListener("focus", () => {
+            if (button.matches(":focus-visible")) showNavTip(button);
+        });
+        button.addEventListener("blur", hideNavTip);
+    }
+    dialog.querySelector(".sbds-nav").addEventListener("scroll", hideNavTip);
 
     for (const [key, title] of Object.entries(settingsLabels)) {
         const label = document.createElement("label");
