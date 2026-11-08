@@ -56,6 +56,8 @@ Open a project, then use **Studio** to arrange Dialogue, Music and Sound Effects
 
 For generated clips, enter a prompt and use **Generate clip** or **Generate all**. For dialogue, put language, emotion, delivery, and vocal effect cues before the words they apply to. Use Speaker 1 and Speaker 2 to distinguish lines when using two voice references. A cue such as `[pause:3s]` requests silence at that point in the same take. Studio converts the request to project frames, and the actual pause length depends on LTX. Clip timing snaps to project frames, with durations shown as seconds and frames.
 
+Use **Import video** to add one H.264 MP4 or WebM reference for dubbing. Studio starts it at frame zero and uses the timeline controls for playback and seeking. Mute and solo control monitoring. Audio exports contain the audio tracks.
+
 Text-to-audio uses the existing LTX node pack. Optional voice references also require [ComfyUI-LTX2.5-MSR](https://github.com/liconstudio/ComfyUI-LTX2.5-MSR), a compatible AVref LoRA, and the LTX video VAE. Studio provides the blank images required by MSR automatically. A missing speaker slot is skipped; clips with no references use the regular audio generation path.
 
 **Export mix** saves a stereo WAV in `exports/`. **Export stems** saves a ZIP of time-aligned WAV tracks. Both respect mute and solo and include edits, gain, and fades.

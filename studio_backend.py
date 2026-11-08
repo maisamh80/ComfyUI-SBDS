@@ -1,3 +1,4 @@
+import asyncio
 import mimetypes
 from io import BytesIO
 from itertools import chain
@@ -21,6 +22,11 @@ from .projects import LOCK, open_project, read_catalog, write_json
 RATE = 48000
 MAX_TIME = 1200
 MAX_MEDIA = 64 * 1024 * 1024
+MAX_VIDEO = 1024 * 1024 * 1024
+VIDEO_TYPES = {
+    ".mp4": ("video/mp4", "mp4", {"h264"}),
+    ".webm": ("video/webm", "webm", {"vp8", "vp9", "av1"}),
+}
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".aiff"}
 COLORS = ("mint", "blue", "lilac", "rose", "amber", "cyan", "orange", "slate")
 TRACK_TYPES = ("dialogue", "music", "sfx")
@@ -108,12 +114,21 @@ def validate_timeline(data, fps):
                 "fadeOut": min(frames(field(clip.get("fadeOut", 0), 0, duration)), duration_frames) / fps,
                 "color": clip["color"] if clip.get("color") in COLORS else "",
                 "media": string(clip.get("media", ""), 80),
+                "retake": bool(clip.get("retake")),
                 "prompt": string(clip.get("prompt", ""), 16000),
                 "refs": [string(ref, 80) for ref in refs],
                 "generation": validate_generation(clip.get("generation", {})),
             })
         result.append(clean)
-    return {"version": 1, "tracks": result}
+    clean = {"version": 1, "tracks": result}
+    monitor = data.get("videoMonitor")
+    if isinstance(monitor, dict):
+        clean["videoMonitor"] = {
+            "id": string(monitor.get("id", ""), 80),
+            "muted": bool(monitor.get("muted")),
+            "solo": bool(monitor.get("solo")),
+        }
+    return clean
 
 
 def validate_generation(value):
@@ -127,11 +142,17 @@ def validate_generation(value):
     seed_mode = value.get("seedMode", "fixed" if seed else "random")
     if seed_mode not in ("random", "fixed"):
         raise ValueError("Choose Random or Fixed seed mode.")
+    last_seed = value.get("lastSeed")
+    if last_seed is not None:
+        if type(last_seed) is not int:
+            raise ValueError("The last used seed must be an integer.")
+        last_seed = field(last_seed, 0, 2 ** 32 - 1)
     return {
         "seedMode": seed_mode,
         "steps": int(field(value.get("steps", 8), 1, 100)),
         "cfg": field(value.get("cfg", 1), 0, 20),
         "seed": seed or ("0" if seed_mode == "fixed" else ""),
+        "lastSeed": last_seed,
         "sampler": string(value.get("sampler", ""), 120),
         "scheduler": string(value.get("scheduler", ""), 120),
         "negative": string(value.get("negative", ""), 8000),
@@ -196,7 +217,73 @@ def open_session(index, project_id):
     path = timeline_path(root)
     data = read_catalog(path)
     timeline = validate_timeline(data, project["fps"]) if data else {"version": 1, "tracks": []}
-    return {"timeline": timeline, "media": list(media_catalog(root)[1].values())}
+    return {"timeline": timeline, "media": list(media_catalog(root)[1].values()),
+            "video": reference_video(child_folder(root, "assets"))}
+
+
+def video_path(assets, item):
+    name = item.get("file")
+    if not isinstance(name, str) or not re.fullmatch(r"reference-[a-f0-9]{32}\.(mp4|webm)", name):
+        raise ValueError("The reference video has an invalid filename.")
+    return record_file(assets, name)
+
+
+def reference_video(assets):
+    item = read_catalog(record_file(assets, "studio-video.json"))
+    return item if item and video_path(assets, item).is_file() else None
+
+
+def video_upload_folder(index, project_id):
+    assets = child_folder(project_root(index, project_id), "assets")
+    if reference_video(assets):
+        raise ValueError("Remove the existing reference video before importing another.")
+    return assets
+
+
+def add_reference_video(assets, temporary, filename, suffix):
+    _, expected_format, codecs = VIDEO_TYPES[suffix]
+    try:
+        with av.open(str(temporary), format=expected_format) as source:
+            if not source.streams.video:
+                raise ValueError("The file does not contain video.")
+            stream = source.streams.video[0]
+            if stream.codec_context.name not in codecs:
+                raise ValueError("Choose an H.264 MP4 or a WebM video.")
+            duration = (source.duration or 0) / av.time_base
+            has_audio = bool(source.streams.audio)
+    except av.error.FFmpegError as error:
+        raise ValueError("The reference video could not be read.") from error
+    if not 0 < duration <= MAX_TIME:
+        raise ValueError("Choose a reference video up to 20 minutes long.")
+    video_id = uuid4().hex
+    item = {"id": video_id, "file": f"reference-{video_id}{suffix}", "name": Path(filename).name[:160],
+            "duration": duration, "hasAudio": has_audio}
+    with LOCK:
+        if reference_video(assets):
+            raise ValueError("Remove the existing reference video before importing another.")
+        target = video_path(assets, item)
+        temporary.replace(target)
+        try:
+            write_json(record_file(assets, "studio-video.json"), item)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+    return item
+
+
+def locate_reference_video(index, project_id, video_id):
+    assets = child_folder(project_root(index, project_id), "assets")
+    item = reference_video(assets)
+    if not item or item["id"] != video_id:
+        raise FileNotFoundError
+    return video_path(assets, item)
+
+
+def remove_reference_video(index, project_id, video_id):
+    with LOCK:
+        path = locate_reference_video(index, project_id, video_id)
+        path.unlink(missing_ok=True)
+        record_file(path.parent, "studio-video.json").unlink(missing_ok=True)
 
 
 def save_session(index, project_id, data):
@@ -455,6 +542,42 @@ def register_studio_routes(routes, catalog_for, run, payload):
         data = await request.read()
         item = await run(import_media, index, request.match_info["id"], request.query.get("filename", ""), data)
         return web.json_response(item, status=201)
+
+    @routes.post(base + "/video")
+    async def add_video(request):
+        index = catalog_for(request)
+        filename = request.query.get("filename", "")
+        suffix = Path(filename).suffix.lower()
+        if suffix not in VIDEO_TYPES:
+            raise web.HTTPBadRequest(text="Choose an H.264 MP4 or a WebM video.")
+        if request.content_length and request.content_length > MAX_VIDEO:
+            raise web.HTTPRequestEntityTooLarge(max_size=MAX_VIDEO, actual_size=request.content_length)
+        assets = await run(video_upload_folder, index, request.match_info["id"])
+        temporary = assets / f".reference-{uuid4().hex}.upload"
+        try:
+            size = 0
+            with temporary.open("xb") as output:
+                async for chunk in request.content.iter_chunked(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_VIDEO:
+                        raise web.HTTPRequestEntityTooLarge(max_size=MAX_VIDEO, actual_size=size)
+                    await asyncio.to_thread(output.write, chunk)
+            item = await run(add_reference_video, assets, temporary, filename, suffix)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return web.json_response(item, status=201)
+
+    @routes.get(base + "/video/{video_id}")
+    async def get_video(request):
+        path = await run(locate_reference_video, catalog_for(request), request.match_info["id"],
+                         request.match_info["video_id"])
+        return web.FileResponse(path, headers={"Content-Type": VIDEO_TYPES[path.suffix][0],
+                                               "X-Content-Type-Options": "nosniff"})
+
+    @routes.delete(base + "/video/{video_id}")
+    async def delete_video(request):
+        await run(remove_reference_video, catalog_for(request), request.match_info["id"], request.match_info["video_id"])
+        return web.Response(status=204)
 
     @routes.post(base + "/take")
     async def add_take(request):

@@ -26,12 +26,17 @@ export const studioView = `
     </div>
     <p data-studio-status class="sbds-project-status" role="status" hidden></p>
     <div data-studio-body hidden>
+        <div class="sbds-reference-preview" data-reference-preview hidden>
+            <video data-reference-video preload="metadata" playsinline aria-label="Reference video"></video>
+        </div>
         <div class="sbds-timeline-toolbar">
             <div class="sbds-actions sbds-timeline-tracks">
                 <select data-new-track-type aria-label="Track type">${Object.entries(kinds).map(([key, title]) => `<option value="${key}">${title}</option>`).join("")}</select>
                 <button type="button" data-studio-track>+ Track</button>
                 <button type="button" data-studio-import>Import audio</button>
                 <input type="file" data-studio-file accept="audio/*,.flac,.wav,.mp3,.ogg,.opus,.m4a,.aac,.aiff" hidden>
+                <button type="button" data-studio-import-video>Import video</button>
+                <input type="file" data-studio-video-file accept=".mp4,.webm" hidden>
             </div>
             <div class="sbds-actions sbds-timeline-transport">
                 <span data-studio-time>00:00:00</span>
@@ -86,6 +91,7 @@ export const studioView = `
                     <button type="button" data-studio-final-prompt>Final Prompt</button>
                     <button type="button" class="sbds-primary" data-studio-regenerate hidden>Generate Again</button>
                     <button type="button" data-studio-delete-clip>Remove clip</button>
+                    <label data-last-seed hidden>Last used seed<input readonly aria-label="Last used seed"></label>
                 </div>
             </fieldset>
         </div>
@@ -133,6 +139,7 @@ function timecode(time, fps) {
     return `${minutesText}:${secondsText}:${framesText}`;
 }
 const audibleTracks = tracks => tracks.filter(track => !track.muted && (!tracks.some(item => item.solo) || track.solo));
+const studioDefaults = { sampler: "uni_pc", scheduler: "simple" };
 
 function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -166,6 +173,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     const progress = get("[data-studio-progress]");
     const progressBar = progress.querySelector("progress");
     const file = get("[data-studio-file]");
+    const videoFile = get("[data-studio-video-file]");
+    const video = get("[data-reference-video]");
+    const preview = get("[data-reference-preview]");
     let active;
     let selected;
     let regenerateClip;
@@ -186,7 +196,10 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         play.title = `${action} timeline (Space)`;
     }
 
-    const playback = createTimelinePlayback(setPlayhead, () => showPlaybackState(false));
+    const playback = createTimelinePlayback(setPlayhead, () => {
+        video.pause();
+        showPlaybackState(false);
+    });
 
     function message(text = "", error = false) {
         status.textContent = text;
@@ -198,9 +211,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         return `/sbds/projects/${encodeURIComponent(session.project.id)}/studio${suffix}`;
     }
 
-    async function service(session, suffix = "", data, raw = false) {
-        const options = data === undefined ? {} : { method: "POST", headers: { "X-SBDS-Projects": "1" } };
-        if (data !== undefined) {
+    async function service(session, suffix = "", data, raw = false, method = data === undefined ? "GET" : "POST") {
+        const options = method === "GET" ? {} : { method, headers: { "X-SBDS-Projects": "1" } };
+        if (method === "POST") {
             if (raw) options.body = data;
             else {
                 options.headers["Content-Type"] = "application/json";
@@ -224,6 +237,35 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         playback.stop();
     }
 
+    function videoMonitor(session = active) {
+        const monitor = session.timeline.videoMonitor;
+        return monitor && monitor.id === session.video?.id ? monitor
+            : { id: session.video?.id, muted: false, solo: false };
+    }
+
+    function videoRoute(item) {
+        return "/video/" + encodeURIComponent(item.id);
+    }
+
+    function syncVideo() {
+        if (!active?.video || video.readyState < 1) return;
+        if (running && (video.seeking || (video.ended && playhead >= video.duration))) return;
+        const target = clamp(playhead, 0, Math.max(0, video.duration - 0.001));
+        const tolerance = running && !video.paused ? Math.max(1.5 / active.project.fps, 0.05) : 0.001;
+        if (Math.abs(video.currentTime - target) > tolerance) video.currentTime = target;
+    }
+
+    function clearVideo() {
+        if (!video.hasAttribute("src")) return;
+        video.removeAttribute("src");
+        video.load();
+    }
+
+    video.addEventListener("loadedmetadata", syncVideo);
+    video.addEventListener("error", () => {
+        if (video.hasAttribute("src")) message("The browser could not play this reference video.", true);
+    });
+
     function setPlayhead(value) {
         playhead = clamp(value, 0, timeLimit);
         const label = timecode(playhead, active?.project.fps || 24);
@@ -233,6 +275,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             playheadHandle.setAttribute("aria-valuenow", String(Number(playhead.toFixed(3))));
             playheadHandle.setAttribute("aria-valuetext", label);
         }
+        syncVideo();
     }
 
     function flush(session) {
@@ -266,8 +309,13 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             id: uuid(), name: media?.name || `${kinds[track.kind]} clip`, media: media?.id || "",
             start: playhead, duration, offset: 0,
             gain: 0, fadeIn: 0, fadeOut: 0, color: "", prompt: "", refs: [],
-            generation: { seedMode: "random", seed: "", steps: 8, cfg: 1, sampler: "", scheduler: "", negative: "" },
+            generation: { seedMode: "random", seed: "", steps: 8, cfg: 1, negative: "" },
         };
+        const options = generationOptions();
+        const settings = modelSettings();
+        for (const [key, preferred] of Object.entries(studioDefaults)) {
+            clip.generation[key] = options[key]?.includes(preferred) ? preferred : settings[key] || "";
+        }
         constrain(clip, fps);
         return clip;
     }
@@ -278,13 +326,19 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 try {
                     const session = active;
                     const fresh = await service(session);
-                    if (active === session) { session.media = fresh.media; render(); }
+                    if (active === session && !busy) {
+                        session.media = fresh.media;
+                        session.video = fresh.video;
+                        render();
+                    }
                 } catch (error) { message(error.message, true); }
             }
             return;
         }
         if (active?.timeline) void flush(active).catch(() => {});
         playback.clear();
+        clearVideo();
+        preview.hidden = true;
         selected = regenerateClip = undefined;
         setPlayhead(0);
         active = project ? { project, save: Promise.resolve(), dirty: false } : undefined;
@@ -300,6 +354,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 for (const clip of track.clips) constrain(clip, session.project.fps);
             }
             session.media = data.media;
+            session.video = data.video;
             if (!session.timeline.tracks.length) session.timeline.tracks.push(newTrack("dialogue"));
             body.hidden = tools.hidden = false;
             message();
@@ -323,7 +378,53 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     }
 
     function endTime() {
-        return Math.max(0, ...active.timeline.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)));
+        return Math.max(active.video?.duration || 0, ...active.timeline.tracks.flatMap(track => track.clips.map(clip => clip.start + clip.duration)));
+    }
+
+    function renderVideoTrack(seek) {
+        const item = active.video;
+        preview.hidden = !item;
+        get("[data-studio-import-video]").disabled = busy || Boolean(item);
+        if (!item) { clearVideo(); return; }
+
+        const source = api.apiURL(route(active, videoRoute(item)));
+        if (video.getAttribute("src") !== source) video.src = source;
+        const monitor = videoMonitor();
+        video.muted = monitor.muted || (active.timeline.tracks.some(track => track.solo) && !monitor.solo);
+
+        const row = element("div", "sbds-track-row sbds-video-track");
+        const controls = element("div", "sbds-track-controls");
+        const actions = element("div", "sbds-track-actions");
+        for (const [key, label, symbol] of [["muted", "Mute reference video", "M"], ["solo", "Solo reference video", "S"]]) {
+            const button = element("button", "", symbol);
+            button.title = label;
+            button.setAttribute("aria-label", label);
+            button.setAttribute("aria-pressed", String(monitor[key]));
+            button.disabled = busy || !item.hasAudio;
+            button.onclick = () => {
+                stopPlayback();
+                active.timeline.videoMonitor = { ...monitor, [key]: !monitor[key] };
+                changed();
+                render();
+            };
+            actions.append(button);
+        }
+        const remove = element("button", "", "×");
+        remove.title = "Remove reference video";
+        remove.setAttribute("aria-label", remove.title);
+        remove.disabled = busy;
+        remove.onclick = () => void removeVideo();
+        actions.append(remove);
+        controls.append(element("span", "sbds-video-track-name", "Reference video"), actions);
+
+        const lane = element("div", "sbds-track-lane");
+        lane.onclick = event => { seek(event); select(); };
+        const bar = element("div", "sbds-video-bar", item.name);
+        bar.style.width = (item.duration * scale) + "px";
+        bar.title = item.name;
+        lane.append(bar);
+        row.append(controls, lane);
+        timeline.append(row);
     }
 
     function snap(value) {
@@ -333,7 +434,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
 
     function select(track, clip, focusClip = false) {
         if (regenerateClip !== clip?.id) regenerateClip = undefined;
-        selected = { track: track.id, clip: clip?.id };
+        selected = track ? { track: track.id, clip: clip?.id } : undefined;
         render();
         if (focusClip) timeline.querySelector('[data-selected="true"]')?.focus({ preventScroll: true });
     }
@@ -548,6 +649,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         };
         ruler.append(marks);
         timeline.append(ruler);
+        renderVideoTrack(seek);
         for (const track of tracks) {
             const row = element("div", "sbds-track-row");
             row.dataset.color = track.color;
@@ -589,7 +691,8 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 const node = element("div", "sbds-timeline-clip");
                 node.dataset.color = clip.color || track.color;
                 node.dataset.selected = String(clip.id === selected?.clip);
-                node.dataset.ready = String(Boolean(clip.media));
+                node.dataset.ready = String(Boolean(clip.media) && !clip.retake);
+                if (clip.retake) node.dataset.retake = "true";
                 node.tabIndex = 0;
                 node.setAttribute("role", "group");
                 node.setAttribute("aria-label", clip.name);
@@ -629,6 +732,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         get("[data-studio-generate]").hidden = !editGeneration;
         get("[data-studio-final-prompt]").hidden = !editGeneration;
         get("[data-studio-regenerate]").hidden = state !== "generated" || editGeneration;
+        const lastSeed = get("[data-last-seed]");
+        lastSeed.hidden = clip.generation.lastSeed == null;
+        lastSeed.querySelector("input").value = clip.generation.lastSeed ?? "";
         for (const input of inspector.querySelectorAll("[data-clip]")) {
             const key = input.dataset.clip;
             const value = clipTimingFields.has(key) ? formatClipTime(clip[key], active.project.fps) : String(clip[key]);
@@ -639,15 +745,20 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         cueEditor.show(track.kind === "dialogue");
         get("[data-studio-dialogue]").hidden = track.kind !== "dialogue";
         const options = generationOptions();
+        const settings = modelSettings();
         for (const input of inspector.querySelectorAll("[data-generation]")) {
             const key = input.dataset.generation;
             if (options[key]) {
-                choiceList(input, options[key].map(value => [value, value]), "Use Model Setup", clip.generation[key], "Unavailable");
+                const fallback = settings[key] || studioDefaults[key];
+                choiceList(input, options[key].map(value => [value, value]), fallback + " (model default)",
+                    clip.generation[key], "Unavailable");
             } else {
                 input.value = clip.generation[key];
             }
         }
-        get('[data-generation="seed"]').disabled = clip.generation.seedMode !== "fixed";
+        const seed = get('[data-generation="seed"]');
+        seed.readOnly = clip.generation.seedMode !== "fixed";
+        if (seed.readOnly) seed.value = clip.generation.lastSeed ?? "";
         for (const input of inspector.querySelectorAll("[data-reference]")) {
             choiceList(input, active.media.filter(item => item.library).map(item => [item.id, item.name]), "No reference", clip.refs[input.dataset.reference]);
         }
@@ -675,7 +786,7 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
             if (!input.validity.valid) { renderInspector(); return; }
             const key = input.dataset.generation;
             clip.generation[key] = input.type === "number" && key !== "seed" ? Number(input.value) || (key === "cfg" ? 0 : 1) : input.value;
-            if (key === "seedMode" && input.value === "fixed") clip.generation.seed ||= "0";
+            if (key === "seedMode" && input.value === "fixed") clip.generation.seed ||= String(clip.generation.lastSeed ?? 0);
         } else {
             return;
         }
@@ -698,7 +809,9 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const { clip } = findSelected();
         if (clip && clipStatus(clip) === "generated") {
             regenerateClip = clip.id;
-            renderInspector();
+            clip.retake = true;
+            changed();
+            render();
             get('[data-clip="prompt"]').focus();
         }
     };
@@ -726,13 +839,18 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
         const session = active;
         const ticket = ++playbackTicket;
         const end = endTime();
-        const clips = audibleTracks(active.timeline.tracks).flatMap(track => track.clips).filter(clip => clip.media);
-        if (!clips.length) { message("Add audio to the timeline to play it."); return; }
+        const tracks = session.video && videoMonitor(session).solo
+            ? session.timeline.tracks.filter(track => track.solo) : session.timeline.tracks;
+        const clips = audibleTracks(tracks).flatMap(track => track.clips).filter(clip => clip.media);
+        if (!clips.length && !session.video) { message("Add audio or reference video to the timeline to play it."); return; }
         if (playhead >= end) setPlayhead(0);
         try {
             const started = playback.play(clips, playhead, end, id => api.apiURL(route(session, `/media/${encodeURIComponent(id)}`)));
             showPlaybackState(true);
-            await started;
+            if (await started && ticket === playbackTicket && session.video && playhead < session.video.duration) {
+                syncVideo();
+                await video.play();
+            }
         } catch (error) {
             if (ticket === playbackTicket) { stopPlayback(); message(error.message, true); }
         }
@@ -753,6 +871,52 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
     });
 
     get("[data-studio-import]").onclick = () => file.click();
+    get("[data-studio-import-video]").onclick = () => videoFile.click();
+    videoFile.onchange = async () => {
+        const item = videoFile.files[0];
+        const session = active;
+        videoFile.value = "";
+        if (!item || !session || busy || session.video) return;
+        stopPlayback();
+        busy = true;
+        render();
+        message("Importing reference video…");
+        try {
+            session.video = await service(session, "/video?" + new URLSearchParams({ filename: item.name }), item, true);
+            if (active === session) {
+                setPlayhead(0);
+                timelineScroll.scrollLeft = 0;
+                message("Reference video ready.");
+            }
+        } catch (error) {
+            if (active === session) message(error.message, true);
+        } finally {
+            busy = false;
+            render();
+        }
+    };
+
+    async function removeVideo() {
+        const session = active;
+        if (busy || !session?.video) return;
+        stopPlayback();
+        busy = true;
+        render();
+        clearVideo();
+        try {
+            await service(session, videoRoute(session.video), undefined, false, "DELETE");
+            session.video = undefined;
+            delete session.timeline.videoMonitor;
+            changed(session);
+            if (active === session) message("Reference video removed.");
+        } catch (error) {
+            if (active === session) message(error.message, true);
+        } finally {
+            busy = false;
+            render();
+        }
+    }
+
     file.onchange = async () => {
         const audio = file.files[0];
         const session = active;
@@ -871,12 +1035,13 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                     references.push(input);
                 }
                 progressBar.value = 0;
+                const usedSeed = seedMode === "random" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed);
                 const graph = studioGraph({
                     ...settings, text: clip.prompt, negative, finalPrompt: positive,
-                    sampler: sampler || settings.sampler,
-                    scheduler: scheduler || settings.scheduler,
+                    sampler: sampler || settings.sampler || studioDefaults.sampler,
+                    scheduler: scheduler || settings.scheduler || studioDefaults.scheduler,
                     seconds: Math.max(8 / fps, Math.ceil(clip.duration * fps / 8) * 8 / fps),
-                    fps, steps, cfg, seed: seedMode === "random" ? crypto.getRandomValues(new Uint32Array(1))[0] : Number(seed),
+                    fps, steps, cfg, seed: usedSeed,
                 }, references, referenceModels);
                 const filename = await queueStudioTake(request, api, graph, id => { jobId = id; });
                 const media = await service(session, "/take", {
@@ -885,6 +1050,8 @@ export function createStudioTimeline(section, api, request, modelSettings, refer
                 });
                 clip.media = media.id;
                 clip.offset = 0;
+                clip.retake = false;
+                clip.generation.lastSeed = usedSeed;
                 if (regenerateClip === clip.id) regenerateClip = undefined;
                 session.media.push(media);
                 changed(session);

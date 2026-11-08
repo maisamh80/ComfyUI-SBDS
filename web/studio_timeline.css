@@ -97,6 +97,25 @@
     min-height: 0;
 }
 .sbds .sbds-inspector-scroll { flex: 1 1 0; min-height: 48px; overflow: auto; }
+.sbds .sbds-reference-preview {
+    flex: none;
+    align-self: center;
+    width: min(100%, 720px);
+    height: clamp(140px, 28vh, 300px);
+    margin-top: 8px;
+    overflow: hidden;
+    border: 1px solid var(--edge);
+    border-radius: 7px;
+    background: #090b0c;
+}
+.sbds .sbds-reference-preview video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.sbds [data-studio-body]:has(.sbds-reference-preview:not([hidden])) { flex-shrink: 0; }
+.sbds [data-studio-body]:has(.sbds-reference-preview:not([hidden])) .sbds-inspector-scroll {
+    flex-basis: auto;
+    max-height: min(35dvh, 380px);
+}
+.sbds [data-last-seed] { font-size: 11px; color: #b9c4c4; }
+.sbds [data-last-seed] input { width: 115px; font-variant-numeric: tabular-nums; }
 .sbds .sbds-timeline-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -131,6 +150,25 @@
     isolation: isolate;
 }
 .sbds .sbds-track-row { display: grid; grid-template-columns: var(--track-header) var(--timeline-width); min-height: 59px; border-bottom: 1px solid #303839; }
+.sbds .sbds-video-track { min-height: 32px; }
+.sbds .sbds-video-track .sbds-track-controls { flex-wrap: nowrap; align-items: center; }
+.sbds .sbds-video-track .sbds-track-actions button { min-width: 17px; padding: 1px 3px; }
+.sbds .sbds-video-track-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.sbds .sbds-video-bar {
+    box-sizing: border-box;
+    min-width: 4px;
+    height: 22px;
+    margin-top: 5px;
+    padding: 2px 6px;
+    overflow: hidden;
+    border: 1px solid #6d8ba8;
+    border-radius: 4px;
+    background: #293b4e;
+    color: #d6e6f3;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .sbds .sbds-track-row[data-color] .sbds-track-controls { box-shadow: inset 3px 0 var(--clip, #86c9a8); }
 .sbds .sbds-track-controls {
     position: sticky;
@@ -198,6 +236,7 @@
 .sbds [data-view="studio"] [data-color="orange"] { --clip: #e8a880; }
 .sbds [data-view="studio"] [data-color="slate"] { --clip: #aab5c1; }
 .sbds .sbds-timeline-clip[data-ready="false"] { border-style: dashed; }
+.sbds .sbds-timeline-clip[data-retake="true"] { border-style: dotted; }
 .sbds .sbds-timeline-clip[data-selected="true"] { z-index: 1; box-shadow: inset 0 0 0 1px #edf7f1; }
 .sbds .sbds-timeline-clip:focus-visible { outline: 2px solid #edf7f1; outline-offset: -3px; }
 .sbds .sbds-clip-name, .sbds .sbds-timeline-clip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
